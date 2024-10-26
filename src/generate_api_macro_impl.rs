@@ -1,5 +1,6 @@
 use log::debug;
 
+use crate::utils::generate_error_enum::generate_error_enum;
 use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
@@ -18,14 +19,6 @@ pub(crate) fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream>
 
     let domain_model_struct_name = get_domain_model_struct_name(&ast);
     debug!("domain model name: {:#?}", domain_model_struct_name);
-
-    // get he processing error implementing enum
-    let processing_error_enum = get_processing_error_enum_idents(&ast);
-
-    debug!(
-        "----------- processing error enum(s): {:#?}\n",
-        processing_error_enum
-    );
 
     // let cqrs_fns = ast
     //     .items
@@ -59,71 +52,12 @@ pub(crate) fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream>
 
     // generate the code
 
-    // TODO support multiplr inputs
-    // let processing_error = format_ident!("{}", processing_error_enum.first().unwrap());
-    let processing_error = format_ident!(
-        "{}",
-        processing_error_enum
-            .first()
-            .expect("error formating the ident")
-    );
-
-    let use_statement_processing_error_enum = format!(
-        "use {}::{};",
-        base_path,
-        processing_error_enum
-            .first()
-            .expect("error formating the ident")
-    );
-    // parse with syn
-    let use_statements = parse_str::<File>(&use_statement_processing_error_enum)
-        .expect("error parsing use statement");
-
-    let use_statement = use_statements
-        .items
-        .first()
-        .expect("first item was not the use statement");
-
-    let generated_code = quote! {
-        #use_statement
-
-        #[derive(thiserror::Error, Debug)]
-        pub enum ProcessingError {
-            #[error("Error during processing: {0}")]
-            #processing_error(#processing_error),
-            #[error("Processing was fine, but state could not be persisted: {0}")]
-            NotPersisted(#[source] std::io::Error),
-        }
-    };
+    let generated_code = generate_error_enum(&base_path, &ast);
     debug!(
         "generated code:\n----------------------------------------------------------------------------------------\n{:}\n----------------------------------------------------------------------------------------\n",
         generated_code
     );
     Ok(generated_code)
-}
-
-/// searches the error enum(s) by derive thiserror only!
-// / TODO search for the word "Error" in the name?
-/// TODO search for one error enum, panic if more are present?
-fn get_processing_error_enum_idents(ast: &File) -> Vec<String> {
-    println!("----------- get processing error enum idents:");
-    ast.items
-        .iter()
-        .filter_map(|item| match item {
-            syn::Item::Enum(item_enum)
-                if item_enum.attrs.iter().any(|attribute| {
-                    attribute.path().is_ident("derive")
-                        && attribute
-                            .to_token_stream()
-                            .to_string()
-                            .contains("thiserror")
-                }) =>
-            {
-                Some(item_enum.ident.to_string())
-            }
-            _ => None,
-        })
-        .collect::<Vec<String>>()
 }
 
 fn get_domain_model_struct_name(ast: &File) -> Result<String> {
@@ -164,7 +98,7 @@ fn get_domain_model_struct_name(ast: &File) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        generate_api_macro_impl::get_processing_error_enum_idents,
+        utils::generate_error_enum::generate_error_enum,
         utils::read_rust_files::read_rust_file_content,
     };
 
@@ -178,10 +112,7 @@ mod tests {
 
     #[test]
     fn generate_error_enum_test() {
-        let result = AST.with(get_processing_error_enum_idents);
-        assert_eq!(
-            "MyGoodProcessingError".to_string(),
-            *result.first().unwrap()
-        );
+        let result = AST.with(|ast| generate_error_enum("", &ast));
+        assert_eq!("MyGoodProcessingError".to_string(), format!("{result:#?}"));
     }
 }
