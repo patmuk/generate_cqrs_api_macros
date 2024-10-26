@@ -3,10 +3,9 @@ use log::debug;
 use crate::utils::generate_error_enum::generate_error_enum;
 use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, ToTokens};
-use syn::{parse_str, File, Result};
+use syn::{File, Result};
 
-pub(crate) fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
+pub fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
     simple_logger::init_with_level(log::Level::Debug).expect("faild to init logger");
 
     log::info!("-------- Generating API --------");
@@ -101,18 +100,39 @@ mod tests {
         utils::generate_error_enum::generate_error_enum,
         utils::read_rust_files::read_rust_file_content,
     };
+    use quote::quote;
+
+    // use syn::{
+    //     parse::{Parse, Parser},
+    //     parse_str, File,
+    // };
+    // use proc_macro2::TokenStream;
+    // pub fn prettyprint(tokens: TokenStream) -> String {
+    //     prettyplease::unparse(&syn::File::parse.parse2(tokens).unwrap())
+    // }
 
     thread_local! {
-        static AST: syn::File = syn::parse_file(
-            &read_rust_file_content("tests/good_source_file/mod.rs")
+        pub (crate) static AST: syn::File = syn::parse_file(
+            &read_rust_file_content("../tests/good_source_file/mod.rs")
             .unwrap()
             .1,
         ).unwrap();
     }
 
     #[test]
-    fn generate_error_enum_test() {
+    fn generate_all_test() {
+        let expected = quote! {
+            use::MyGoodProcessingError;
+
+            #[derive(thiserror::Error, Debug)]
+            pub enum ProcessingError {
+                #[error("Error during processing: {0}")]
+                MyGoodProcessingError(MyGoodProcessingError),
+                #[error("Processing was fine, but state could not be persisted: {0}")]
+                NotPersisted(#[source] std::io::Error),
+            }
+        };
         let result = AST.with(|ast| generate_error_enum("", &ast));
-        assert_eq!("MyGoodProcessingError".to_string(), format!("{result:#?}"));
+        assert_eq!(expected.to_string(), result.to_string());
     }
 }

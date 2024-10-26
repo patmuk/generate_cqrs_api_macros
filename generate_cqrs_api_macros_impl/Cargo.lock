@@ -22,17 +22,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "generate_cqrs_api_macros"
-version = "0.1.0"
-dependencies = [
- "generate_cqrs_api_macros_impl",
- "log",
- "proc-macro2",
- "simple_logger",
- "thiserror",
-]
-
-[[package]]
 name = "generate_cqrs_api_macros_impl"
 version = "0.1.0"
 dependencies = [
@@ -41,6 +30,7 @@ dependencies = [
  "quote",
  "simple_logger",
  "syn",
+ "thiserror",
 ]
 
 [[package]]

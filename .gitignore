@@ -1,1 +1,2 @@
-/target
+**/target
+generate_cqrs_api_macros_impl/target/.rustc_info.json

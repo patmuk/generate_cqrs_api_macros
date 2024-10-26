@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::{parse_str, File};
 
 pub(crate) fn generate_use_statement(base_path: &str, tipe: &str) -> TokenStream {

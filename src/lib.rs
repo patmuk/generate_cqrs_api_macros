@@ -1,9 +1,7 @@
 extern crate proc_macro;
 
+use generate_cqrs_api_macros_impl::generate_api_macro_impl;
 use proc_macro::TokenStream;
-
-mod generate_api_macro_impl;
-mod utils;
 
 #[proc_macro]
 pub fn generate_api(file_pathes: proc_macro::TokenStream) -> proc_macro::TokenStream {
