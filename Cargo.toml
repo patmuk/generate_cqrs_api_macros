@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "generate_cqrs_api_macros_impl"]
+
 [package]
 name = "generate_cqrs_api_macros"
 version = "0.1.0"

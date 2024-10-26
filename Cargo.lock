@@ -41,6 +41,7 @@ dependencies = [
  "quote",
  "simple_logger",
  "syn",
+ "thiserror",
 ]
 
 [[package]]
