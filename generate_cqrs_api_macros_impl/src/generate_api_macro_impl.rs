@@ -2,10 +2,11 @@ use log::debug;
 
 use crate::utils::generate_effect_enum::generate_effect_enum;
 use crate::utils::generate_error_enum::generate_error_enum;
+use crate::utils::get_domain_model_struct_name::get_domain_model_struct_name;
 use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{File, Result};
+use syn::Result;
 
 pub fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
     simple_logger::init_with_level(log::Level::Debug).expect("faild to init logger");
@@ -66,41 +67,6 @@ pub fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
         generated_code
     );
     Ok(generated_code)
-}
-
-fn get_domain_model_struct_name(ast: &File) -> Result<String> {
-    let domain_model_name = ast
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            // syn::Item::Impl(item_impl)
-            syn::Item::Impl(item_impl)
-                if item_impl.trait_.is_some()
-                    && item_impl
-                        .trait_
-                        .clone()
-                        .expect("Should have gotten a trait")
-                        .1
-                        .segments
-                        .iter()
-                        .any(|segment| segment.ident == "CqrsModel") =>
-            {
-                match item_impl.self_ty.as_ref() {
-                    syn::Type::Path(type_path) => Some(&type_path.path),
-                    _ => None,
-                }
-            }
-            _ => None,
-        })
-        .filter_map(|path| Some(path.get_ident()?.to_string()))
-        .collect::<Vec<String>>();
-    if domain_model_name.len() != 1 {
-        return Err(syn::Error::new(
-            Span::call_site(),
-            "expected exactly one domain model struct",
-        ));
-    }
-    Ok(domain_model_name[0].clone())
 }
 
 #[cfg(test)]
