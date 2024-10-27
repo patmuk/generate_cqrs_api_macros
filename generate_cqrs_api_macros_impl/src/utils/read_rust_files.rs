@@ -25,11 +25,11 @@ pub (crate) fn tokens_2_file_locations(file_pathes: TokenStream) -> Result<Vec<S
 /// reads a rust file and returns (path, content)
 pub (crate) fn read_rust_file_content(file_path: &str) -> Result<(String, String)> {
 
-    let path = file_location_2_base_path(&file_path);
+    let path = file_location_2_base_path(file_path);
     
     debug!("base path is: {:#?}", path);
 
-    let content = std::fs::read_to_string(&file_path)
+    let content = std::fs::read_to_string(file_path)
         .map_err(|io_error| {
             let current_dir = std::env::current_dir();
             match current_dir {

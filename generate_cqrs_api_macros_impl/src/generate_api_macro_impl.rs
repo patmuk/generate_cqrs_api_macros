@@ -1,8 +1,10 @@
 use log::debug;
 
+use crate::utils::generate_effect_enum::generate_effect_enum;
 use crate::utils::generate_error_enum::generate_error_enum;
 use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::{Span, TokenStream};
+use quote::quote;
 use syn::{File, Result};
 
 pub fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
@@ -16,7 +18,8 @@ pub fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
     // TODO implement for more than one file
     let ast = syn::parse_file(&file_content)?;
 
-    let domain_model_struct_name = get_domain_model_struct_name(&ast);
+    let domain_model_struct_name = get_domain_model_struct_name(&ast)
+        .expect("Couldn't extract the domain model's name. One Struct needs to derive CqrsModel.");
     debug!("domain model name: {:#?}", domain_model_struct_name);
 
     // let cqrs_fns = ast
@@ -51,7 +54,13 @@ pub fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
 
     // generate the code
 
-    let generated_code = generate_error_enum(&base_path, &ast);
+    let generated_effect_enum = generate_effect_enum(&domain_model_struct_name, &ast);
+    let generated_error_enum = generate_error_enum(&base_path, &ast);
+
+    let generated_code = quote! {
+        #generated_effect_enum
+        #generated_error_enum
+    };
     debug!(
         "generated code:\n----------------------------------------------------------------------------------------\n{:}\n----------------------------------------------------------------------------------------\n",
         generated_code
@@ -132,7 +141,7 @@ mod tests {
                 NotPersisted(#[source] std::io::Error),
             }
         };
-        let result = AST.with(|ast| generate_error_enum("", &ast));
+        let result = AST.with(|ast| generate_error_enum("", ast));
         assert_eq!(expected.to_string(), result.to_string());
     }
 }
