@@ -1,3 +1,4 @@
+use std::f64::consts::E;
 use std::iter;
 
 use log::debug;
@@ -23,6 +24,7 @@ use super::get_domain_model_struct::get_type_path;
 pub(crate) fn generate_cqrs_impl(
     domain_model_struct_ident: &Ident,
     effect: &Ident,
+    effect_variants: &Vec<Variant>,
     processing_error: &Ident,
     ast: &File,
 ) -> TokenStream {
@@ -39,6 +41,7 @@ pub(crate) fn generate_cqrs_impl(
         &cqrs_functions_sig_idents,
         domain_model_struct_ident,
         effect,
+        effect_variants,
         processing_error,
     );
     quote! {
@@ -51,6 +54,7 @@ fn generate_cqrs_functions(
     cqrs_fns_sig_idents: &Vec<(Ident, Vec<Ident>)>,
     domain_model_struct_ident: &Ident,
     effect: &Ident,
+    effect_variants: &Vec<Variant>,
     processing_error: &Ident,
 ) -> TokenStream {
     // let lhs_sig = cqrs_fns_sig.iter()
@@ -65,7 +69,7 @@ fn generate_cqrs_functions(
 
         //remove 'app_statement' from the lhs arguments
         let lhs_args =
-        if (args[0] == "app_state") {
+        if args[0] == "app_state" {
             args[1..].to_vec()
         } else {
             panic!("'impl Cqrs {{' functions have to have 'app_state: AppState' as the first argument! Found {} instead.",args[0]);
@@ -83,7 +87,32 @@ fn generate_cqrs_functions(
 
     let match_statement = functions.map(|(lhs, args, rhs_ident)| {
         quote! {
-                        #lhs => #domain_model_struct_ident::#rhs_ident(#(#args),*),
+            #lhs => #domain_model_struct_ident::#rhs_ident(#(#args),*),
+        }
+    });
+
+    let effects_match_statements = effect_variants.iter().map(|variant| {
+        // use the type as the ident, as enum variant payloads don't have a name
+        let variant_field_names_lhs = variant.fields.iter().map(|field| {
+            format_ident!("{}",
+            stringcase::snake_case(
+                &get_type_ident(&field.ty)
+                    .expect("Tipe of effect enum content exists!")
+                    .to_string(),
+            ))
+        });
+        let variant_field_names_rhs = variant_field_names_lhs.clone();
+        let lhs_ident = format_ident!("{}", variant.ident);
+        let rhs_ident = format_ident!("{}{}", domain_model_struct_ident, variant.ident);
+        
+        if variant.fields.is_empty() {
+            quote! {
+                #effect::#lhs_ident => Effect :: #rhs_ident,
+            }
+        } else {
+            quote! {
+                #effect::#lhs_ident ( #(#variant_field_names_lhs),* ) => Effect ::#rhs_ident ( #(#variant_field_names_rhs),* ),
+            }
         }
     });
 
@@ -105,10 +134,10 @@ fn generate_cqrs_functions(
                 .map_err(ProcessingError::#processing_error)?
                 .into_iter()
                 .map(|effect| match effect {
-                    // TODO generate
-                    TodoListEffect::RenderTodoList(content) => {
-                        #effect::TodoListEffectRenderTodoList(content)
-                    }
+                    #(#effects_match_statements)*
+                    // TodoListEffect::RenderTodoList(content) => {
+                    //     #effect::TodoListEffectRenderTodoList(content)
+                    // }
                 })
                 .collect();
                 Ok(result)
@@ -298,7 +327,7 @@ mod tests {
     use std::sync::LazyLock;
 
     use quote::{format_ident, quote};
-    use syn::File;
+    use syn::{parse_str, Fields, FieldsNamed, File, ItemEnum, Token, Variant};
 
     use crate::utils::generate_cqrs_impl::{
         generate_cqrs_enum, generate_cqrs_functions, generate_cqrs_impl, get_cqrs_fns_sig,
@@ -491,6 +520,20 @@ mod tests {
             ))),
             &format_ident!("MyGoodDomainModel"),
             &format_ident!("MyGoodDomainModelEffect"),
+            &parse_str::<ItemEnum>(
+                "
+                       pub enum MyGoodDomainModelEffect {
+                          RenderModel(String),
+                          DeleteModel,
+                          PostitionModel(String, Usize),
+                       }
+                   ",
+            )
+            .expect("Cannot parse test oracle!")
+            .variants
+            .into_pairs()
+            .map(|punctuated| punctuated.value().to_owned())
+            .collect::<Vec<Variant>>(),
             &format_ident!("MyGoodProcessingError"),
         );
         // TODO check if comma after arg type is invalid rust code
@@ -509,8 +552,11 @@ mod tests {
                 .map_err(ProcessingError::MyGoodProcessingError)?
                 .into_iter()
                 .map(|effect| match effect {
-                    TodoListEffect::RenderTodoList(content) => {
-                        MyGoodDomainModelEffect::TodoListEffectRenderTodoList(content)
+                    MyGoodDomainModelEffect::RenderModel(content) => {
+                        Effect::MyGoodDomainModelRenderModel(content)
+                    }
+                    MyGoodDomainModelEffect::DeleteModel => {
+                        Effect::MyGoodDomainModelDeleteModel
                     }
                 })
                 .collect();

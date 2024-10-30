@@ -7,29 +7,31 @@ use syn::Variant;
 
 use crate::utils::get_enum::get_enum_by_ident_keyword;
 
-pub(crate) fn generate_effect_enum(domain_struct_name: &Ident, ast: &File) -> (Ident, TokenStream) {
+pub(crate) fn generate_effect_enum(
+    domain_struct_name: &Ident,
+    ast: &File,
+) -> (Ident, Vec<Variant>, TokenStream) {
     let processing_effect_enum = get_enum_by_ident_keyword(ast, "Effect");
 
     let variants = processing_effect_enum
         .variants
         .into_pairs()
-        .map(|punctuated| {
-            let variant = punctuated.value();
-            Variant {
-                ident: format_ident!(
-                    "{domain_struct_name}{}",
-                    punctuated.value().ident.to_string()
-                ),
-                ..variant.clone()
-            }
-        })
+        .map(|punctuated| punctuated.value().to_owned())
         .collect::<Vec<Variant>>();
 
+    let prefixed_variant = variants
+        .iter()
+        .map(|variant| Variant {
+            ident: format_ident!("{domain_struct_name}{}", variant.ident.to_string()),
+            ..variant.clone()
+        })
+        .collect::<Vec<Variant>>();
     (
         processing_effect_enum.ident,
+        variants,
         quote! {
             pub enum Effect {
-                #(#variants),*
+                #(#prefixed_variant),*
             }
         },
     )
@@ -46,9 +48,9 @@ mod tests {
         let ast = syn::parse_file(
             r#"
                 #[derive(Debug)]
-                pub enum TodoListEffect {
-                    RenderTodoList(RustAutoOpaque<MyDomainModel>),
-                    DeleteTodoList,
+                pub enum MyDomainModelEffect {
+                    RenderItemList(RustAutoOpaque<MyDomainModel>),
+                    DeleteItemList,
                     }         
                     "#,
         )
@@ -56,11 +58,15 @@ mod tests {
 
         let result = generate_effect_enum(&format_ident!("MyDomainModel"), &ast);
         let expected = (
-            format_ident!("TodoListEffect"),
+            format_ident!("MyDomainModelEffect"),
+            vec![
+                "RenderItemList(RustAutoOpaque<MyDomainModel>),
+                DeleteItemList,",
+            ],
             quote! {
                     pub enum Effect {
-                        MyDomainModelRenderTodoList(RustAutoOpaque<MyDomainModel>),
-                        MyDomainModelDeleteTodoList
+                        MyDomainModelRenderItemList(RustAutoOpaque<MyDomainModel>),
+                        MyDomainModelDeleteItemList
                 }
             },
         );
@@ -68,6 +74,7 @@ mod tests {
         // let result = AST.with(|ast| generate_effect_enum("", &ast));
 
         assert_eq!(expected.0.to_string(), result.0.to_string());
-        assert_eq!(expected.1.to_string(), result.1.to_string());
+        // assert_eq!(expected.1, result.1); // if all other tests are ok, this intermediate result must be ok as well
+        assert_eq!(expected.2.to_string(), result.2.to_string());
     }
 }

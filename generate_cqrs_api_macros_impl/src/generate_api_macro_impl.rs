@@ -29,12 +29,13 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
     let domain_model_struct_ident = get_domain_model_struct_ident(&ast)
         .expect("Couldn't extract the domain model's name. One Struct needs to derive CqrsModel.");
     debug!("domain model name: {:#?}", domain_model_struct_ident);
-    let (effect_ident, generated_effect_enum) =
+    let (effect_ident, effect_variants, generated_effect_enum) =
         generate_effect_enum(&domain_model_struct_ident, &ast);
     let (error_ident, generated_error_enum) = generate_error_enum(&base_path, &ast);
     let generated_cqrs_fns = generate_cqrs_impl(
         &domain_model_struct_ident,
         &effect_ident,
+        &effect_variants,
         &error_ident,
         &ast,
     );
@@ -101,8 +102,8 @@ mod tests {
                     .map_err(ProcessingError::MyGoodProcessingError)?
                     .into_iter()
                     .map(|effect| match effect {
-                        TodoListEffect::RenderTodoList(content) => {
-                            MyGoodDomainModelEffect::TodoListEffectRenderTodoList(content)
+                        MyGoodDomainModelEffect::RenderTodoList(content) => {
+                            Effect::MyGoodDomainModelRenderTodoList(content)
                         }
                     })
                     .collect();
