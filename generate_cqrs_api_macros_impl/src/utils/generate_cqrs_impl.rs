@@ -6,10 +6,13 @@ use quote::format_ident;
 use quote::quote;
 use stringcase::pascal_case_with_sep;
 use syn::File;
+use syn::FnArg;
 use syn::Ident;
 use syn::ImplItemFn;
 use syn::Item;
 use syn::ItemImpl;
+use syn::PatType;
+use syn::Type;
 use syn::Variant;
 
 use crate::utils::get_enum::get_enum_by_ident_keyword;
@@ -17,94 +20,125 @@ use crate::utils::get_enum::get_enum_by_ident_keyword;
 use super::get_domain_model_struct::get_type_ident;
 use super::get_domain_model_struct::get_type_path;
 
-// TODO impl the fns here
-// impl Cqrs {
-//     pub(crate) fn process_with_app_state(
-//         self,
-//         app_state: &AppState,
-//     ) -> Result<Vec<Effect>, ProcessingError> {
-//         let result = match self {
-//             Cqrs::TodoCommandAddTodo(todo) => TodoListModel::add_todo(app_state, todo),
-//             Cqrs::TodoCommandRemoveTodo(todo_pos) => {
-//                 TodoListModel::remove_todo(app_state, todo_pos)
-//             }
-//             Cqrs::TodoCommandCleanList => TodoListModel::clean_list(app_state),
-//             Cqrs::TodoQueryAllTodos => TodoListModel::get_all_todos(app_state),
-//         }
-//         .map_err(ProcessingError::TodoListProcessingError)?
-//         .into_iter()
-//         .map(|effect| match effect {
-//             TodoListEffect::RenderTodoList(content) => {
-//                 Effect::TodoListEffectRenderTodoList(content)
-//             }
-//         })
-//         .collect();
-//         Ok(result)
-//     }
-//     pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-//         let app_state = &Lifecycle::get().app_state;
-//         let result = self.process_with_app_state(app_state)?;
-//         //persist the state, but only if dirty
-//         let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
-//         Ok(result)
-//     }
-// }
 pub(crate) fn generate_cqrs_impl(
-    domain_struct_ident: &Ident,
+    domain_model_struct_ident: &Ident,
     effect: &Ident,
     processing_error: &Ident,
     ast: &File,
 ) -> TokenStream {
-    let generated_cqrs_enum =
-        generate_cqrs_enum(domain_struct_ident, effect, processing_error, ast);
+    let cqrs_functions =
+        get_cqrs_functions(domain_model_struct_ident, effect, processing_error, ast);
 
+    let cqrs_functions_sig = get_cqrs_fns_sig(cqrs_functions);
+    let cqrs_functions_sig_tipes = get_cqrs_fns_sig_tipes(&cqrs_functions_sig);
+    let cqrs_functions_sig_idents = get_cqrs_fns_sig_idents(&cqrs_functions_sig);
+
+    let generated_cqrs_enum =
+        generate_cqrs_enum(&cqrs_functions_sig_tipes, domain_model_struct_ident);
+    let generated_cqrs_fns = generate_cqrs_functions(
+        &cqrs_functions_sig_idents,
+        domain_model_struct_ident,
+        effect,
+        processing_error,
+    );
     quote! {
         #generated_cqrs_enum
+        #generated_cqrs_fns
     }
 }
 
-fn generate_cqrs_enum(
-    domain_struct_ident: &Ident,
+fn generate_cqrs_functions(
+    cqrs_fns_sig_idents: &Vec<(Ident, Vec<Ident>)>,
+    domain_model_struct_ident: &Ident,
     effect: &Ident,
     processing_error: &Ident,
-    ast: &File,
 ) -> TokenStream {
-    let cqrs_functions = get_cqrs_functions(domain_struct_ident, effect, processing_error, ast);
+    // let lhs_sig = cqrs_fns_sig.iter()
+    //    .map(|(tipe, agrs)| {
+    //         let (lhs, rhs) = sig;
+    let functions = cqrs_fns_sig_idents.iter().map(|(ident, args)| {
+        let fn_ident = format_ident!(
+            "{}{}",
+            domain_model_struct_ident,
+            pascal_case_with_sep(&ident.to_string(), "_")
+        );
 
-    let cqrs_function_idents = cqrs_functions
-        .iter()
-        .map(|function| {
-            let fn_ident = format_ident!(
-                "{}{}",
-                domain_struct_ident,
-                pascal_case_with_sep(&function.sig.ident.to_string(), "_")
-            );
-            let arg_types = function
-                .sig
-                .inputs
-                .iter()
-                .filter_map(|arg| {
-                    if let syn::FnArg::Typed(arg) = arg {
-                        if let syn::Type::Path(path) = &*arg.ty {
-                            path.path.get_ident()
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<&Ident>>();
-            (fn_ident, arg_types)
-        })
-        .collect::<Vec<(Ident, Vec<&Ident>)>>();
+        //remove 'app_statement' from the lhs arguments
+        let lhs_args =
+        if (args[0] == "app_state") {
+            args[1..].to_vec()
+        } else {
+            panic!("'impl Cqrs {{' functions have to have 'app_state: AppState' as the first argument! Found {} instead.",args[0]);
+        };
 
-    let enum_variants = cqrs_function_idents.iter().map(|(ident, args)| {
-        if args.is_empty() {
-            quote! {#ident}
+        let lhs = if lhs_args.is_empty() {
+            quote! {Cqrs::#fn_ident}
         } else {
             quote! {
-                #ident (#(#args,)*)
+                Cqrs::#fn_ident (#(#lhs_args), *)
+            }
+        };
+        (lhs, args, ident)
+    });
+
+    let match_statement = functions.map(|(lhs, args, rhs_ident)| {
+        quote! {
+                        #lhs => #domain_model_struct_ident::#rhs_ident(#(#args),*),
+        }
+    });
+
+    quote! {
+        impl Cqrs {
+            pub(crate) fn process_with_app_state(
+                self,
+                app_state: &AppState,
+            ) -> Result<Vec<Effect>, ProcessingError> {
+                let result = match self {
+                    //
+                    #(#match_statement)*
+                    // Cqrs::TodoCommandAddTodo(todo) => #domain_model_struct_ident::add_todo(app_state, todo),
+                    // Cqrs::TodoCommandRemoveTodo(todo_pos) =>
+                    //     #domain_model_struct_ident::remove_todo(app_state, todo_pos),
+                    // Cqrs::TodoCommandCleanList => #domain_model_struct_ident::clean_list(app_state),
+                    // Cqrs::TodoQueryAllTodos => #domain_model_struct_ident::get_all_todos(app_state),
+                }//
+                .map_err(ProcessingError::#processing_error)?
+                .into_iter()
+                .map(|effect| match effect {
+                    // TODO generate
+                    TodoListEffect::RenderTodoList(content) => {
+                        #effect::TodoListEffectRenderTodoList(content)
+                    }
+                })
+                .collect();
+                Ok(result)
+            }
+            pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                let app_state = &Lifecycle::get().app_state;
+                let result = self.process_with_app_state(app_state)?;
+                //persist the state, but only if dirty
+                let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
+                Ok(result)
+            }
+        }
+    }
+}
+fn generate_cqrs_enum(
+    cqrs_fns_sig_tipes: &Vec<(Ident, Vec<Ident>)>,
+    domain_model_struct_ident: &Ident,
+) -> TokenStream {
+    let enum_variants = cqrs_fns_sig_tipes.iter().map(|(ident, args)| {
+        let composed_fn_ident = format_ident!(
+            "{}{}",
+            domain_model_struct_ident,
+            pascal_case_with_sep(&ident.to_string(), "_")
+        );
+
+        if args.is_empty() {
+            quote! {#composed_fn_ident}
+        } else {
+            quote! {
+                #composed_fn_ident (#(#args),*)
             }
         }
     });
@@ -119,8 +153,65 @@ fn generate_cqrs_enum(
     code
 }
 
+/// extracts the signature of passed functions,
+/// returning the types of the arguments
+/// e.g.: foo(name: String, age: usize) => [foo [String, usize]]
+fn get_cqrs_fns_sig_tipes(cqrs_fns_sig: &Vec<(Ident, Vec<PatType>)>) -> Vec<(Ident, Vec<Ident>)> {
+    cqrs_fns_sig
+        .iter()
+        .map(|(ident, args)| {
+            let args_tipes = args
+                .iter()
+                .filter_map(|arg| get_type_ident(&arg.ty).ok())
+                .collect::<Vec<Ident>>();
+            (ident.to_owned(), args_tipes)
+        })
+        .collect::<Vec<(Ident, Vec<Ident>)>>()
+}
+/// extracts the signature of passed functions,
+/// returning the names of the arguments
+/// e.g.: foo(name: String, age: usize) => [foo [name, age]]
+fn get_cqrs_fns_sig_idents(cqrs_fns_sig: &Vec<(Ident, Vec<PatType>)>) -> Vec<(Ident, Vec<Ident>)> {
+    cqrs_fns_sig
+        .iter()
+        .map(|(ident, args)| {
+            let args_tipes = args
+                .iter()
+                .filter_map(|arg| match &*arg.pat {
+                    syn::Pat::Ident(pat_ident) => Some(pat_ident.ident.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<Ident>>();
+            (ident.to_owned(), args_tipes)
+        })
+        .collect::<Vec<(Ident, Vec<Ident>)>>()
+}
+
+fn get_cqrs_fns_sig(cqrs_functions: Vec<ImplItemFn>) -> Vec<(Ident, Vec<PatType>)> {
+    let cqrs_functions_sig = cqrs_functions
+        .iter()
+        .map(|function| {
+            let fn_ident = function.sig.ident.to_owned();
+            let arg_types = function
+                .sig
+                .inputs
+                .iter()
+                .filter_map(|arg| {
+                    if let syn::FnArg::Typed(arg) = arg {
+                        Some(arg.to_owned())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<PatType>>();
+            (fn_ident, arg_types)
+        })
+        .collect::<Vec<(Ident, Vec<PatType>)>>();
+    cqrs_functions_sig
+}
+
 fn get_cqrs_functions(
-    domain_struct_ident: &Ident,
+    domain_model_struct_ident: &Ident,
     effect: &Ident,
     processing_error: &Ident,
     ast: &File,
@@ -134,7 +225,7 @@ fn get_cqrs_functions(
                 syn::Item::Impl(item_impl) if item_impl.trait_.is_none() => item_impl,
                 _ => return None,
             };
-            if get_type_ident(&item_impl.self_ty).ok()? != *domain_struct_ident {
+            if get_type_ident(&item_impl.self_ty).ok()? != *domain_model_struct_ident {
                 return None;
             }
 
@@ -193,7 +284,7 @@ fn get_cqrs_functions(
     if cqrs_fns.is_empty() {
         panic!(
             r#"Did not find a single cqrs-function! Be sure to implement them like:
-            impl {domain_struct_ident}{{
+            impl {domain_model_struct_ident}{{
                 fn my_cqrs_function(app_state : & AppState, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<Vec<{effect}, {processing_error}>>{{...}}
             }}
             "#
@@ -210,7 +301,8 @@ mod tests {
     use syn::File;
 
     use crate::utils::generate_cqrs_impl::{
-        generate_cqrs_enum, generate_cqrs_impl, get_cqrs_functions,
+        generate_cqrs_enum, generate_cqrs_functions, generate_cqrs_impl, get_cqrs_fns_sig,
+        get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes, get_cqrs_functions,
     };
 
     const CODE: &str = r#"
@@ -362,23 +454,76 @@ mod tests {
     }
 
     #[test]
-    fn generate_cqrs_impl_test() {
+    fn generate_cqrs_enum_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
+
+        // let result = generate_cqrs_enum(&get_cqrs_fns_sig_tipes(&get_cqrs_fns_sig(
         let result = generate_cqrs_enum(
+            &get_cqrs_fns_sig_tipes(&get_cqrs_fns_sig(get_cqrs_functions(
+                &format_ident!("MyGoodDomainModel"),
+                &format_ident!("MyGoodDomainModelEffect"),
+                &format_ident!("MyGoodProcessingError"),
+                &ast,
+            ))),
             &format_ident!("MyGoodDomainModel"),
-            &format_ident!("MyGoodDomainModelEffect"),
-            &format_ident!("MyGoodProcessingError"),
-            &ast,
         );
-        // TODO check if comma after arg type is invalid rust code
         let expected = quote! {
             pub enum Cqrs {
-                MyGoodDomainModelRemoveItem(usize, ),
-                MyGoodDomainModelAddItem(String, usize, ),
+                MyGoodDomainModelRemoveItem(usize),
+                MyGoodDomainModelAddItem(String, usize),
                 MyGoodDomainModelCleanList,
                 MyGoodDomainModelGetAllItems
             }
         };
+
+        assert_eq!(expected.to_string(), result.to_string());
+    }
+    #[test]
+    fn generate_cqrs_fns_test() {
+        let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
+
+        let result = generate_cqrs_functions(
+            &get_cqrs_fns_sig_idents(&get_cqrs_fns_sig(get_cqrs_functions(
+                &format_ident!("MyGoodDomainModel"),
+                &format_ident!("MyGoodDomainModelEffect"),
+                &format_ident!("MyGoodProcessingError"),
+                &ast,
+            ))),
+            &format_ident!("MyGoodDomainModel"),
+            &format_ident!("MyGoodDomainModelEffect"),
+            &format_ident!("MyGoodProcessingError"),
+        );
+        // TODO check if comma after arg type is invalid rust code
+        let expected = quote! {
+        impl Cqrs {
+            pub(crate) fn process_with_app_state(
+                self,
+                app_state: &AppState,
+            ) -> Result<Vec<Effect>, ProcessingError> {
+                let result = match self {
+                    Cqrs::MyGoodDomainModelRemoveItem(todo_pos) => MyGoodDomainModel::remove_item(app_state, todo_pos),
+                    Cqrs::MyGoodDomainModelAddItem(item, priority) => MyGoodDomainModel::add_item(app_state, item, priority),
+                    Cqrs::MyGoodDomainModelCleanList => MyGoodDomainModel::clean_list(app_state),
+                    Cqrs::MyGoodDomainModelGetAllItems => MyGoodDomainModel::get_all_items(app_state),
+                }
+                .map_err(ProcessingError::MyGoodProcessingError)?
+                .into_iter()
+                .map(|effect| match effect {
+                    TodoListEffect::RenderTodoList(content) => {
+                        MyGoodDomainModelEffect::TodoListEffectRenderTodoList(content)
+                    }
+                })
+                .collect();
+                Ok(result)
+            }
+            pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                let app_state = &Lifecycle::get().app_state;
+                let result = self.process_with_app_state(app_state)?;
+                let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
+                Ok(result)
+            }
+        }
+                };
 
         assert_eq!(expected.to_string(), result.to_string());
     }
