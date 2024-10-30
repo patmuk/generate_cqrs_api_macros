@@ -552,12 +552,9 @@ mod tests {
                 .map_err(ProcessingError::MyGoodProcessingError)?
                 .into_iter()
                 .map(|effect| match effect {
-                    MyGoodDomainModelEffect::RenderModel(content) => {
-                        Effect::MyGoodDomainModelRenderModel(content)
-                    }
-                    MyGoodDomainModelEffect::DeleteModel => {
-                        Effect::MyGoodDomainModelDeleteModel
-                    }
+                    MyGoodDomainModelEffect :: RenderModel (string) => Effect :: MyGoodDomainModelRenderModel (string) , 
+                    MyGoodDomainModelEffect :: DeleteModel => Effect :: MyGoodDomainModelDeleteModel , 
+                    MyGoodDomainModelEffect :: PostitionModel (string , usize) => Effect :: MyGoodDomainModelPostitionModel (string , usize) , 
                 })
                 .collect();
                 Ok(result)
