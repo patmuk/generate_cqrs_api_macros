@@ -40,8 +40,8 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
     );
 
     let generated_code = quote! {
-        #generated_effect_enum
         #generated_error_enum
+        #generated_effect_enum
         #generated_cqrs_fns
     };
     debug!(
@@ -70,56 +70,50 @@ mod tests {
     #[test]
     fn generate_all_from_good_file_test() {
         let expected = quote! {
-            // impl Cqrs {
-            //     pub(crate) fn process_with_app_state(
-            //         self,
-            //         app_state: &AppState,
-            //     ) -> Result<Vec<Effect>, ProcessingError> {
-            //         let result = match self {
-            //             Cqrs::TodoCommandAddTodo(todo) => TodoListModel::add_todo(app_state, todo),
-            //             Cqrs::TodoCommandRemoveTodo(todo_pos) => {
-            //                 TodoListModel::remove_todo(app_state, todo_pos)
-            //             }
-            //             Cqrs::TodoCommandCleanList => TodoListModel::clean_list(app_state),
-            //             Cqrs::TodoQueryAllTodos => TodoListModel::get_all_todos(app_state),
-            //         }
-            //         .map_err(ProcessingError::TodoListProcessingError)?
-            //         .into_iter()
-            //         .map(|effect| match effect {
-            //             TodoListEffect::RenderTodoList(content) => {
-            //                 Effect::TodoListEffectRenderTodoList(content)
-            //             }
-            //         })
-            //         .collect();
-            //         Ok(result)
-            //     }
-            //     pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-            //         let app_state = &Lifecycle::get().app_state;
-            //         let result = self.process_with_app_state(app_state)?;
-            //         //persist the state, but only if dirty
-            //         let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
-            //         Ok(result)
-            //     }
-            // }
-
-            pub enum Effect {
-                MyGoodDomainModelRenderItems(RustAutoOpaque<MyGoodDomainModel>)
-            }
-
             use crate::good_source_file::MyGoodProcessingError;
-
-            #[derive(thiserror::Error, Debug)]
+            #[derive(thiserror :: Error, Debug)]
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
                 MyGoodProcessingError(MyGoodProcessingError),
                 #[error("Processing was fine, but state could not be persisted: {0}")]
                 NotPersisted(#[source] std::io::Error),
             }
+            pub enum Effect {
+                MyGoodDomainModelRenderItems(RustAutoOpaque<MyGoodDomainModel>)
+            }
             pub enum Cqrs {
-                MyGoodDomainModelAddItem(String, ),
-                MyGoodDomainModelRemoveItem(usize, ),
+                MyGoodDomainModelAddItem(String),
+                MyGoodDomainModelRemoveItem(usize),
                 MyGoodDomainModelCleanList,
                 MyGoodDomainModelGetAllItems
+            }
+            impl Cqrs {
+                pub(crate) fn process_with_app_state(
+                    self,
+                    app_state: &AppState,
+                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let result = match self {
+                        Cqrs::MyGoodDomainModelAddItem(item) => MyGoodDomainModel::add_item(app_state, item),
+                        Cqrs::MyGoodDomainModelRemoveItem(todo_pos) => MyGoodDomainModel::remove_item(app_state, todo_pos),
+                        Cqrs::MyGoodDomainModelCleanList => MyGoodDomainModel::clean_list(app_state),
+                        Cqrs::MyGoodDomainModelGetAllItems => MyGoodDomainModel::get_all_items(app_state),
+                    }
+                    .map_err(ProcessingError::MyGoodProcessingError)?
+                    .into_iter()
+                    .map(|effect| match effect {
+                        TodoListEffect::RenderTodoList(content) => {
+                            MyGoodDomainModelEffect::TodoListEffectRenderTodoList(content)
+                        }
+                    })
+                    .collect();
+                    Ok(result)
+                }
+                pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                    let app_state = &Lifecycle::get().app_state;
+                    let result = self.process_with_app_state(app_state)?;
+                    let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
+                    Ok(result)
+                }
             }
         };
         let (base_path, content) = read_rust_file_content("../tests/good_source_file/mod.rs")
