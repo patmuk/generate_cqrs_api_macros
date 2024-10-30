@@ -1,8 +1,8 @@
 use proc_macro2::Span;
-use syn::{File, Result};
+use syn::{File, Ident, Path, Result, Type};
 
-pub(crate) fn get_domain_model_struct_name(ast: &File) -> Result<String> {
-    let domain_model_name = ast
+pub(crate) fn get_domain_model_struct_ident(ast: &File) -> Result<Ident> {
+    let domain_model_type = ast
         .items
         .iter()
         .filter_map(|item| match item {
@@ -18,34 +18,46 @@ pub(crate) fn get_domain_model_struct_name(ast: &File) -> Result<String> {
                         .iter()
                         .any(|segment| segment.ident == "CqrsModel") =>
             {
-                match item_impl.self_ty.as_ref() {
-                    syn::Type::Path(type_path) => Some(&type_path.path),
-                    _ => None,
-                }
+                Some(item_impl.self_ty.clone())
             }
             _ => None,
         })
-        .filter_map(|path| Some(path.get_ident()?.to_string()))
-        .collect::<Vec<String>>();
-    match domain_model_name.len() {
+        .collect::<Vec<Box<Type>>>();
+    match domain_model_type.len() {
         0 => Err(syn::Error::new(
             Span::call_site(),
             "No domain model struct found. Mark it with the trait CqrsModel.",
         )),
-        1 => Ok(domain_model_name[0].clone()),
+        1 => get_type_ident(&domain_model_type[0]),
         _ => Err(syn::Error::new(
             Span::call_site(),
             format!(
                 "Only mark one struct as the domain model! Found {:#?}",
-                domain_model_name
+                domain_model_type
+                    .iter()
+                    .map(|tipe| get_type_ident(&tipe))
+                    .collect::<Vec<Result<Ident>>>(),
             ),
         )),
     }
 }
 
+pub(crate) fn get_type_path(tipe: &Type) -> Result<Path> {
+    match tipe {
+        syn::Type::Path(type_path) => Ok(type_path.path.to_owned()),
+        _ => Err(syn::Error::new(Span::call_site(), "Not a struct type.")),
+    }
+}
+pub(crate) fn get_type_ident(tipe: &Type) -> Result<Ident> {
+    get_type_path(tipe)?
+        .get_ident()
+        .ok_or_else(|| syn::Error::new(Span::call_site(), "item has no ident"))
+        .cloned()
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::utils::get_domain_model_struct_name::get_domain_model_struct_name;
+    use crate::utils::get_domain_model_struct::get_domain_model_struct_ident;
 
     const DEFAULT_CODE: &str = r#"
             use::MyGoodProcessingError;
@@ -72,7 +84,7 @@ mod tests {
         .to_string()
             + DEFAULT_CODE;
         let ast = syn::parse_file(&input).expect("test oracle should be parsable");
-        let result = get_domain_model_struct_name(&ast).unwrap();
+        let result = get_domain_model_struct_ident(&ast).unwrap();
         assert_eq!("MyDomainModel", result.to_string());
     }
     #[test]
@@ -86,7 +98,7 @@ mod tests {
         .to_string()
             + DEFAULT_CODE;
         let ast = syn::parse_file(&input).expect("test oracle should be parsable");
-        let result = get_domain_model_struct_name(&ast);
+        let result = get_domain_model_struct_ident(&ast);
         // assert_eq!("aha", result.to_string());
         assert_eq!(
             "No domain model struct found. Mark it with the trait CqrsModel.",
@@ -113,7 +125,18 @@ mod tests {
         .to_string()
             + DEFAULT_CODE;
         let ast = syn::parse_file(&input).expect("test oracle should be parsable");
-        let result = get_domain_model_struct_name(&ast);
-        assert_eq!("Only mark one struct as the domain model! Found [\n    \"MyDomainModel\",\n    \"SecondMyDomainModel\",\n]", result.unwrap_err().to_string());
+        let result = get_domain_model_struct_ident(&ast);
+        assert_eq!(r#"Only mark one struct as the domain model! Found [
+    Ok(
+        Ident(
+            MyDomainModel,
+        ),
+    ),
+    Ok(
+        Ident(
+            SecondMyDomainModel,
+        ),
+    ),
+]"#, result.unwrap_err().to_string());
     }
 }

@@ -1,19 +1,19 @@
 use log::debug;
 use quote::ToTokens;
-use syn::{File, ItemEnum};
+use syn::{File, Ident, ItemEnum};
 
-pub(crate) fn get_enum_type_by_ident_keyword(ast: &File, keyword: &str) -> String {
+pub(crate) fn get_enum_type_by_ident_keyword(ast: &File, keyword: &str) -> Ident {
     debug!("----------- get enum type by ident keyword {keyword}:");
     let result = ast
         .items
         .iter()
         .filter_map(|item| match item {
             syn::Item::Enum(item_enum) if item_enum.ident.to_string().contains(keyword) => {
-                Some(item_enum.ident.to_string())
+                Some(item_enum.ident.clone())
             }
             _ => None,
         })
-        .collect::<Vec<String>>();
+        .collect::<Vec<Ident>>();
     debug!("got {} idents: {:?}", result.len(), result);
     match result.len() {
         0 => panic!("No enum found! Needs to include '{keyword}' in its name."),
@@ -25,7 +25,7 @@ pub(crate) fn get_enum_type_by_ident_keyword(ast: &File, keyword: &str) -> Strin
 }
 // alternative way to identify the error enum (by looking for derive(thiserror))
 #[allow(dead_code)]
-pub(crate) fn get_enum_ident_by_derive_keyword(ast: &File, keyword: &str) -> String {
+pub(crate) fn get_enum_ident_by_derive_keyword(ast: &File, keyword: &str) -> Ident {
     debug!("----------- get enum idents for keyword {keyword}:");
     let result = ast
         .items
@@ -37,11 +37,11 @@ pub(crate) fn get_enum_ident_by_derive_keyword(ast: &File, keyword: &str) -> Str
                         && attribute.to_token_stream().to_string().contains(keyword)
                 }) =>
             {
-                Some(item_enum.ident.to_string())
+                Some(item_enum.ident.clone())
             }
             _ => None,
         })
-        .collect::<Vec<String>>();
+        .collect::<Vec<Ident>>();
     match result.len() {
         0 => panic!("No enum found! Needs to include '{keyword}' in its name."),
         1 => result[0].to_owned(),
@@ -73,7 +73,7 @@ pub(crate) fn get_enum_by_ident_keyword(ast: &File, keyword: &str) -> ItemEnum {
 
 #[cfg(test)]
 mod tests {
-    use quote::quote;
+    use quote::{format_ident, quote};
 
     use crate::utils::get_enum::{get_enum_by_ident_keyword, get_enum_type_by_ident_keyword};
 
@@ -91,13 +91,17 @@ mod tests {
         .expect("test oracle should be parsable");
 
         let result = get_enum_type_by_ident_keyword(&ast, "Error");
-        assert_eq!("MyGoodProcessingError", result);
+        assert_eq!(format_ident!("MyGoodProcessingError"), result);
     }
     #[test]
     #[should_panic(
         expected = r#"More than one Error enum found! Please combine all Error cases in one Enum. Found: [
-    "ProcessingError",
-    "SecondProcessingError",
+    Ident(
+        ProcessingError,
+    ),
+    Ident(
+        SecondProcessingError,
+    ),
 ]"#
     )]
     fn fail_more_then_one_error_enum_test() {

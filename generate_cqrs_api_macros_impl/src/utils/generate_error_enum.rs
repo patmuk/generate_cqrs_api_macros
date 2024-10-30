@@ -3,11 +3,13 @@ use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
 use syn::File;
+use syn::Ident;
 
+use crate::generate_api_macro_impl::BasePath;
 use crate::utils::generate_use_statement::generate_use_statement;
 use crate::utils::get_enum::get_enum_type_by_ident_keyword;
 
-pub(crate) fn generate_error_enum(base_path: &str, ast: &File) -> TokenStream {
+pub(crate) fn generate_error_enum(base_path: &BasePath, ast: &File) -> (Ident, TokenStream) {
     let processing_error_enum = get_enum_type_by_ident_keyword(ast, "Error");
 
     debug!(
@@ -18,24 +20,29 @@ pub(crate) fn generate_error_enum(base_path: &str, ast: &File) -> TokenStream {
     let use_statement = generate_use_statement(base_path, &processing_error_enum);
     let processing_error = format_ident!("{processing_error_enum}");
 
-    quote! {
-        #use_statement
+    (
+        processing_error.clone(),
+        quote! {
+            #use_statement
 
-        #[derive(thiserror::Error, Debug)]
-        pub enum ProcessingError {
-            #[error("Error during processing: {0}")]
-            #processing_error(#processing_error),
-            #[error("Processing was fine, but state could not be persisted: {0}")]
-            NotPersisted(#[source] std::io::Error),
-        }
-    }
+            #[derive(thiserror::Error, Debug)]
+            pub enum ProcessingError {
+                #[error("Error during processing: {0}")]
+                #processing_error(#processing_error),
+                #[error("Processing was fine, but state could not be persisted: {0}")]
+                NotPersisted(#[source] std::io::Error),
+            }
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use quote::quote;
+    use quote::{format_ident, quote};
 
-    use crate::utils::generate_error_enum::generate_error_enum;
+    use crate::{
+        generate_api_macro_impl::BasePath, utils::generate_error_enum::generate_error_enum,
+    };
 
     #[test]
     fn generate_error_enum_test() {
@@ -50,26 +57,37 @@ mod tests {
         )
         .expect("test oracle should be parsable");
 
-        let result = generate_error_enum("crate::Model", &ast);
-        let expected = quote! {
-            use crate::Model::MyGoodProcessingError;
+        let result = generate_error_enum(&BasePath("crate::Model".to_string()), &ast);
+        let expected = (
+            format_ident!("MyGoodProcessingError"),
+            quote! {
+                use crate::Model::MyGoodProcessingError;
 
-            #[derive(thiserror::Error, Debug)]
-            pub enum ProcessingError {
-                #[error("Error during processing: {0}")]
-                MyGoodProcessingError(MyGoodProcessingError),
-                #[error("Processing was fine, but state could not be persisted: {0}")]
-                NotPersisted(#[source] std::io::Error),
-            }
-        };
+                #[derive(thiserror::Error, Debug)]
+                pub enum ProcessingError {
+                    #[error("Error during processing: {0}")]
+                    MyGoodProcessingError(MyGoodProcessingError),
+                    #[error("Processing was fine, but state could not be persisted: {0}")]
+                    NotPersisted(#[source] std::io::Error),
+                }
+            },
+        );
 
         // let result = AST.with(|ast| generate_error_enum("", &ast));
 
-        assert_eq!(expected.to_string(), result.to_string());
+        assert_eq!(expected.0.to_string(), result.0.to_string());
+        assert_eq!(expected.1.to_string(), result.1.to_string());
     }
     #[test]
     #[should_panic(
-        expected = "More than one Error enum found! Please combine all Error cases in one Enum. Found: [\n    \"ProcessingError\",\n    \"SecondProcessingError\",\n]"
+        expected = r#"More than one Error enum found! Please combine all Error cases in one Enum. Found: [
+    Ident(
+        ProcessingError,
+    ),
+    Ident(
+        SecondProcessingError,
+    ),
+]"#
     )]
     fn fail_more_then_one_error_enum_test() {
         let ast = syn::parse_file(
@@ -88,23 +106,24 @@ mod tests {
         )
         .expect("test oracle should be parsable");
 
-        let result = generate_error_enum("crate::Model", &ast);
+        let result = generate_error_enum(&BasePath("crate::Model".to_string()), &ast);
 
-        let expected = quote! {
-            use::MyGoodProcessingError;
+        let expected = (
+            format_ident!("MyGoodProcessingError"),
+            quote! {
+                use::MyGoodProcessingError;
 
-            #[derive(thiserror::Error, Debug)]
-            pub enum ProcessingError {
-                #[error("Error during processing: {0}")]
-                MyGoodProcessingError(MyGoodProcessingError),
-                #[error("Processing was fine, but state could not be persisted: {0}")]
-                NotPersisted(#[source] std::io::Error),
-            }
-        };
-
-        // let result = AST.with(|ast| generate_error_enum("", &ast));
-
-        assert_eq!(expected.to_string(), result.to_string());
+                #[derive(thiserror::Error, Debug)]
+                pub enum ProcessingError {
+                    #[error("Error during processing: {0}")]
+                    MyGoodProcessingError(MyGoodProcessingError),
+                    #[error("Processing was fine, but state could not be persisted: {0}")]
+                    NotPersisted(#[source] std::io::Error),
+                }
+            },
+        );
+        assert_eq!(expected.0.to_string(), result.0.to_string());
+        assert_eq!(expected.1.to_string(), result.1.to_string());
     }
     #[test]
     #[should_panic(expected = "No enum found! Needs to include 'Error' in its name.")]
@@ -120,22 +139,26 @@ mod tests {
         )
         .expect("test oracle should be parsable");
 
-        let result = generate_error_enum("crate::Model", &ast);
+        let result = generate_error_enum(&BasePath("crate::Model".to_string()), &ast);
 
-        let expected = quote! {
-            use::MyGoodProcessingError;
+        let expected = (
+            format_ident!("MyGoodProcessingError"),
+            quote! {
+                use::MyGoodProcessingError;
 
-            #[derive(thiserror::Error, Debug)]
-            pub enum ProcessingError {
-                #[error("Error during processing: {0}")]
-                MyGoodProcessingError(MyGoodProcessingError),
-                #[error("Processing was fine, but state could not be persisted: {0}")]
-                NotPersisted(#[source] std::io::Error),
-            }
-        };
+                #[derive(thiserror::Error, Debug)]
+                pub enum ProcessingError {
+                    #[error("Error during processing: {0}")]
+                    MyGoodProcessingError(MyGoodProcessingError),
+                    #[error("Processing was fine, but state could not be persisted: {0}")]
+                    NotPersisted(#[source] std::io::Error),
+                }
+            },
+        );
 
         // let result = AST.with(|ast| generate_error_enum("", &ast));
 
-        assert_eq!(expected.to_string(), result.to_string());
+        assert_eq!(expected.0.to_string(), result.0.to_string());
+        assert_eq!(expected.1.to_string(), result.1.to_string());
     }
 }

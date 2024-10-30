@@ -2,7 +2,7 @@ use log::{debug, info, trace};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::Result;
 
-use crate::utils::file_location_2_base_path::file_location_2_base_path;
+use crate::{generate_api_macro_impl::{BasePath, SourceCode}, utils::file_location_2_base_path::file_location_2_base_path};
 
 /// extracts file locations from a TokenStream
 pub (crate) fn tokens_2_file_locations(file_pathes: TokenStream) -> Result<Vec<String>> {
@@ -23,7 +23,7 @@ pub (crate) fn tokens_2_file_locations(file_pathes: TokenStream) -> Result<Vec<S
 }
 
 /// reads a rust file and returns (path, content)
-pub (crate) fn read_rust_file_content(file_path: &str) -> Result<(String, String)> {
+pub (crate) fn read_rust_file_content(file_path: &str) -> Result<(BasePath, SourceCode)> {
 
     let path = file_location_2_base_path(file_path);
     
@@ -49,5 +49,5 @@ pub (crate) fn read_rust_file_content(file_path: &str) -> Result<(String, String
             }    
         )?;
     trace!("file content: \n{}", content);
-    Ok ((path, content))
+    Ok ((BasePath(path), SourceCode(content)))
 }

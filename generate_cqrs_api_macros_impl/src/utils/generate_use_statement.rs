@@ -1,9 +1,11 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_str, File};
+use syn::{parse_str, File, Ident};
 
-pub(crate) fn generate_use_statement(base_path: &str, tipe: &str) -> TokenStream {
-    let use_statement_string = format!("use {}::{};", base_path, tipe);
+use crate::generate_api_macro_impl::BasePath;
+
+pub(crate) fn generate_use_statement(base_path: &BasePath, tipe: &Ident) -> TokenStream {
+    let use_statement_string = format!("use {}::{};", base_path.0, tipe);
     // parse with syn
     let use_statement_parsed =
         parse_str::<File>(&use_statement_string).expect("error parsing use statement");
@@ -18,16 +20,19 @@ pub(crate) fn generate_use_statement(base_path: &str, tipe: &str) -> TokenStream
 
 #[cfg(test)]
 mod tests {
-    use quote::quote;
+    use quote::{format_ident, quote};
 
-    use crate::utils::generate_use_statement::generate_use_statement;
+    use crate::{
+        generate_api_macro_impl::BasePath, utils::generate_use_statement::generate_use_statement,
+    };
 
     #[test]
     fn generate_use_statement_test_zero_level() {
         let expected = quote! {
             use crate::MyStruct;
         };
-        let result = generate_use_statement("crate", "MyStruct");
+        let result =
+            generate_use_statement(&BasePath("crate".to_string()), &format_ident!("MyStruct"));
 
         assert_eq!(expected.to_string(), result.to_string())
     }
@@ -36,7 +41,10 @@ mod tests {
         let expected = quote! {
             use crate::module::MyStruct;
         };
-        let result = generate_use_statement("crate::module", "MyStruct");
+        let result = generate_use_statement(
+            &BasePath("crate::module".to_string()),
+            &format_ident!("MyStruct"),
+        );
 
         assert_eq!(expected.to_string(), result.to_string())
     }
@@ -45,7 +53,10 @@ mod tests {
         let expected = quote! {
             use crate::module::domain::MyStruct;
         };
-        let result = generate_use_statement("crate::module::domain", "MyStruct");
+        let result = generate_use_statement(
+            &BasePath("crate::module::domain".to_string()),
+            &format_ident!("MyStruct"),
+        );
 
         assert_eq!(expected.to_string(), result.to_string())
     }
@@ -54,7 +65,10 @@ mod tests {
         let expected = quote! {
             use crate::module::domain::my::MyStruct;
         };
-        let result = generate_use_statement("crate::module::domain::my", "MyStruct");
+        let result = generate_use_statement(
+            &BasePath("crate::module::domain::my".to_string()),
+            &format_ident!("MyStruct"),
+        );
 
         assert_eq!(expected.to_string(), result.to_string())
     }

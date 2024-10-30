@@ -40,6 +40,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "simple_logger",
+ "stringcase",
  "syn",
  "thiserror",
 ]
@@ -138,6 +139,12 @@ dependencies = [
  "time",
  "windows-sys",
 ]
+
+[[package]]
+name = "stringcase"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04028eeb851ed08af6aba5caa29f2d59a13ed168cee4d6bd753aeefcf1d636b0"
 
 [[package]]
 name = "syn"
