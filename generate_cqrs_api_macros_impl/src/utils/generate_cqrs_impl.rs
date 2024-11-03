@@ -1,3 +1,4 @@
+use std::env::var;
 use std::f64::consts::E;
 use std::iter;
 
@@ -16,10 +17,11 @@ use syn::PatType;
 use syn::Type;
 use syn::Variant;
 
+use crate::utils::get_domain_model_struct::get_type_name;
 use crate::utils::get_enum::get_enum_by_ident_keyword;
 
-use super::get_domain_model_struct::get_type_ident;
-use super::get_domain_model_struct::get_type_path;
+use super::get_domain_model_struct::get_ident;
+use super::get_domain_model_struct::get_path;
 
 pub(crate) fn generate_cqrs_impl(
     domain_model_struct_ident: &Ident,
@@ -94,12 +96,22 @@ fn generate_cqrs_functions(
     let effects_match_statements = effect_variants.iter().map(|variant| {
         // use the type as the ident, as enum variant payloads don't have a name
         let variant_field_names_lhs = variant.fields.iter().map(|field| {
-            format_ident!("{}",
-            stringcase::snake_case(
-                &get_type_ident(&field.ty)
-                    .expect("Tipe of effect enum content exists!")
-                    .to_string(),
-            ))
+            // let field_name = match field.ty {
+            //     Type::Array(type_array) => todo!(),
+            //     Type::Path(type_path) => todo!(),
+            //     Type::Tuple(type_tuple) => todo!(),
+            //     _ => todo!(),
+            // };
+
+
+
+            // format_ident!("{}",
+            // stringcase::snake_case(
+                get_type_name(&field.ty)
+                // &get_ident(&field.ty)
+                    .unwrap_or_else(|_| panic!("effect enum type has no ident:  {:#?}",quote! {variant.fields}))
+                    .to_string()
+            // ))
         });
         let variant_field_names_rhs = variant_field_names_lhs.clone();
         let lhs_ident = format_ident!("{}", variant.ident);
@@ -123,21 +135,12 @@ fn generate_cqrs_functions(
                 app_state: &AppState,
             ) -> Result<Vec<Effect>, ProcessingError> {
                 let result = match self {
-                    //
                     #(#match_statement)*
-                    // Cqrs::TodoCommandAddTodo(todo) => #domain_model_struct_ident::add_todo(app_state, todo),
-                    // Cqrs::TodoCommandRemoveTodo(todo_pos) =>
-                    //     #domain_model_struct_ident::remove_todo(app_state, todo_pos),
-                    // Cqrs::TodoCommandCleanList => #domain_model_struct_ident::clean_list(app_state),
-                    // Cqrs::TodoQueryAllTodos => #domain_model_struct_ident::get_all_todos(app_state),
-                }//
+                }
                 .map_err(ProcessingError::#processing_error)?
                 .into_iter()
                 .map(|effect| match effect {
                     #(#effects_match_statements)*
-                    // TodoListEffect::RenderTodoList(content) => {
-                    //     #effect::TodoListEffectRenderTodoList(content)
-                    // }
                 })
                 .collect();
                 Ok(result)
@@ -191,7 +194,7 @@ fn get_cqrs_fns_sig_tipes(cqrs_fns_sig: &Vec<(Ident, Vec<PatType>)>) -> Vec<(Ide
         .map(|(ident, args)| {
             let args_tipes = args
                 .iter()
-                .filter_map(|arg| get_type_ident(&arg.ty).ok())
+                .filter_map(|arg| get_ident(&arg.ty).ok())
                 .collect::<Vec<Ident>>();
             (ident.to_owned(), args_tipes)
         })
@@ -254,7 +257,7 @@ fn get_cqrs_functions(
                 syn::Item::Impl(item_impl) if item_impl.trait_.is_none() => item_impl,
                 _ => return None,
             };
-            if get_type_ident(&item_impl.self_ty).ok()? != *domain_model_struct_ident {
+            if get_ident(&item_impl.self_ty).ok()? != *domain_model_struct_ident {
                 return None;
             }
 
@@ -262,7 +265,7 @@ fn get_cqrs_functions(
             let functions = item_impl.items.iter().filter_map(|item| match item {
                 syn::ImplItem::Fn(impl_item_fn) => {
                     let output_type = match &impl_item_fn.sig.output {
-                        syn::ReturnType::Type(_, tipe) => get_type_path(tipe).ok()?,
+                        syn::ReturnType::Type(_, tipe) => get_path(tipe).ok()?,
                         _ => return None,
                     };
 
@@ -278,7 +281,7 @@ fn get_cqrs_functions(
                     };
 
                     let mut arg_pairs = generic_args.args.iter().filter_map(|arg| match arg {
-                        syn::GenericArgument::Type(t) => Some(get_type_path(t).ok()?.segments),
+                        syn::GenericArgument::Type(t) => Some(get_path(t).ok()?.segments),
                         _ => None,
                     });
 
@@ -292,7 +295,7 @@ fn get_cqrs_functions(
                         };
                         match inner_effect {
                             syn::GenericArgument::Type(t) => {
-                                if get_type_path(t).ok()?.segments.last()?.ident == *effect {
+                                if get_path(t).ok()?.segments.last()?.ident == *effect {
                                     Some(impl_item_fn.clone())
                                 } else {
                                     None
@@ -524,6 +527,7 @@ mod tests {
                 "
                        pub enum MyGoodDomainModelEffect {
                           RenderModel(String),
+                          RenderMoelItems(Vec<MyItems>),
                           DeleteModel,
                           PostitionModel(String, Usize),
                        }
