@@ -1,27 +1,18 @@
-use std::env::var;
-use std::f64::consts::E;
-use std::iter;
-
 use log::debug;
 use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
 use stringcase::pascal_case_with_sep;
+use syn::Fields;
 use syn::File;
-use syn::FnArg;
 use syn::Ident;
 use syn::ImplItemFn;
-use syn::Item;
-use syn::ItemImpl;
 use syn::PatType;
-use syn::Type;
 use syn::Variant;
 
-use crate::utils::get_domain_model_struct::get_type_name;
-use crate::utils::get_enum::get_enum_by_ident_keyword;
-
-use super::get_domain_model_struct::get_ident;
-use super::get_domain_model_struct::get_path;
+use crate::utils::type_2_ident::get_ident;
+use crate::utils::type_2_ident::get_type_name;
+use super::type_2_ident::get_path;
 
 pub(crate) fn generate_cqrs_impl(
     domain_model_struct_ident: &Ident,
@@ -59,9 +50,6 @@ fn generate_cqrs_functions(
     effect_variants: &Vec<Variant>,
     processing_error: &Ident,
 ) -> TokenStream {
-    // let lhs_sig = cqrs_fns_sig.iter()
-    //    .map(|(tipe, agrs)| {
-    //         let (lhs, rhs) = sig;
     let functions = cqrs_fns_sig_idents.iter().map(|(ident, args)| {
         let fn_ident = format_ident!(
             "{}{}",
@@ -92,41 +80,42 @@ fn generate_cqrs_functions(
             #lhs => #domain_model_struct_ident::#rhs_ident(#(#args),*),
         }
     });
-
     let effects_match_statements = effect_variants.iter().map(|variant| {
         // use the type as the ident, as enum variant payloads don't have a name
-        let variant_field_names_lhs = variant.fields.iter().map(|field| {
-            // let field_name = match field.ty {
-            //     Type::Array(type_array) => todo!(),
-            //     Type::Path(type_path) => todo!(),
-            //     Type::Tuple(type_tuple) => todo!(),
-            //     _ => todo!(),
-            // };
-
-
-
-            // format_ident!("{}",
-            // stringcase::snake_case(
-                get_type_name(&field.ty)
-                // &get_ident(&field.ty)
-                    .unwrap_or_else(|_| panic!("effect enum type has no ident:  {:#?}",quote! {variant.fields}))
-                    .to_string()
-            // ))
-        });
-        let variant_field_names_rhs = variant_field_names_lhs.clone();
-        let lhs_ident = format_ident!("{}", variant.ident);
-        let rhs_ident = format_ident!("{}{}", domain_model_struct_ident, variant.ident);
-        
-        if variant.fields.is_empty() {
-            quote! {
-                #effect::#lhs_ident => Effect :: #rhs_ident,
-            }
-        } else {
-            quote! {
-                #effect::#lhs_ident ( #(#variant_field_names_lhs),* ) => Effect ::#rhs_ident ( #(#variant_field_names_rhs),* ),
-            }
+let variant_fields_idents = match &variant.fields {
+    Fields::Unit => {
+        vec![]},
+        _ => {
+            let variant_fields = match &variant.fields{
+                Fields::Unit => unreachable!(),   
+                    Fields::Named(fields_named) => &fields_named.named,
+                Fields::Unnamed(fields_unnamed) => &fields_unnamed.unnamed,
+            };
+            variant_fields.iter().map(|field|                
+                {
+                    if let Some(field_name) = &field.ident {
+                        field_name.to_owned()
+                    } else {       
+                        get_type_name(&field.ty).expect("Couldn't get the types name!")
+                    }
+                }
+            ).collect::<Vec<Ident>>()
         }
-    });
+    };
+
+    let lhs_ident = format_ident!("{}", variant.ident);
+    let rhs_ident = format_ident!("{}{}", domain_model_struct_ident, variant.ident);
+    
+    if variant_fields_idents.is_empty() {
+        quote! {
+            #effect::#lhs_ident => Effect :: #rhs_ident,
+        }
+    } else {
+        quote! {
+            #effect::#lhs_ident ( #(#variant_fields_idents),* ) => Effect ::#rhs_ident ( #(#variant_fields_idents),* ),
+        }
+    }
+});
 
     quote! {
         impl Cqrs {
@@ -288,6 +277,7 @@ fn get_cqrs_functions(
                     // Match Vec<effect> and processing_error in Result
                     let left = arg_pairs.next()?;
                     let right = arg_pairs.next()?;
+                    //TODO use get_type_ident
                     if right.last()?.ident == *processing_error && left.first()?.ident == "Vec" {
                         let inner_effect = match &left.last()?.arguments {
                             syn::PathArguments::AngleBracketed(args) => args.args.last()?,
@@ -295,7 +285,8 @@ fn get_cqrs_functions(
                         };
                         match inner_effect {
                             syn::GenericArgument::Type(t) => {
-                                if get_path(t).ok()?.segments.last()?.ident == *effect {
+                                if get_ident(t).ok()? == *effect {
+                                // if get_type_path(t).ok()?.segments.last()?.ident == *effect {
                                     Some(impl_item_fn.clone())
                                 } else {
                                     None
@@ -327,7 +318,6 @@ fn get_cqrs_functions(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
 
     use quote::{format_ident, quote};
     use syn::{parse_str, Fields, FieldsNamed, File, ItemEnum, Token, Variant};
@@ -527,7 +517,7 @@ mod tests {
                 "
                        pub enum MyGoodDomainModelEffect {
                           RenderModel(String),
-                          RenderMoelItems(Vec<MyItems>),
+                          RenderModelItems(Vec<MyItems>),
                           DeleteModel,
                           PostitionModel(String, Usize),
                        }
@@ -557,6 +547,7 @@ mod tests {
                 .into_iter()
                 .map(|effect| match effect {
                     MyGoodDomainModelEffect :: RenderModel (string) => Effect :: MyGoodDomainModelRenderModel (string) , 
+                    MyGoodDomainModelEffect :: RenderModelItems (vec_my_items) => Effect :: MyGoodDomainModelRenderModelItems (vec_my_items) , 
                     MyGoodDomainModelEffect :: DeleteModel => Effect :: MyGoodDomainModelDeleteModel , 
                     MyGoodDomainModelEffect :: PostitionModel (string , usize) => Effect :: MyGoodDomainModelPostitionModel (string , usize) , 
                 })
