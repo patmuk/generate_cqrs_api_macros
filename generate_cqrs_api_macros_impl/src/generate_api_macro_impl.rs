@@ -102,9 +102,8 @@ mod tests {
                     .map_err(ProcessingError::MyGoodProcessingError)?
                     .into_iter()
                     .map(|effect| match effect {
-                        MyGoodDomainModelEffect::RenderTodoList(content) => {
-                            Effect::MyGoodDomainModelRenderTodoList(content)
-                        }
+                        MyGoodDomainModelEffect::RenderItems(rust_auto_opaque_my_good_domain_model) =>
+                            Effect::MyGoodDomainModelRenderItems(rust_auto_opaque_my_good_domain_model) ,
                     })
                     .collect();
                     Ok(result)
