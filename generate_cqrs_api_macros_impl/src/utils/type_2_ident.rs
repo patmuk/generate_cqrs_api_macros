@@ -27,12 +27,12 @@ pub(crate) fn get_type_name(tipe: &Type) -> Result<Ident> {
 }
 fn get_inner_type_name(tipe: &Type) -> Result<String> {
     match tipe {
-        Type::Array(type_array) => get_inner_type_name(&*type_array.elem),
-        Type::Slice(type_slice) => get_inner_type_name(&*type_slice.elem),
-        Type::Group(type_group) => get_inner_type_name(&*type_group.elem),
-        Type::Paren(type_paren) => get_inner_type_name(&*type_paren.elem),
-        Type::Ptr(type_ptr) => get_inner_type_name(&*type_ptr.elem),
-        Type::Reference(type_reference) => Ok(get_inner_type_name(&*type_reference.elem)? + "_"),
+        Type::Array(type_array) => get_inner_type_name(&type_array.elem),
+        Type::Slice(type_slice) => get_inner_type_name(&type_slice.elem),
+        Type::Group(type_group) => get_inner_type_name(&type_group.elem),
+        Type::Paren(type_paren) => get_inner_type_name(&type_paren.elem),
+        Type::Ptr(type_ptr) => get_inner_type_name(&type_ptr.elem),
+        Type::Reference(type_reference) => Ok(get_inner_type_name(&type_reference.elem)? + "_"),
         Type::Tuple(type_tuple) => Ok({
             let mut elements = type_tuple.elems.iter();
             let first = get_inner_type_name(elements.next().unwrap())?;

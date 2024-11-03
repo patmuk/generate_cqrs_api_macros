@@ -37,7 +37,7 @@ pub(crate) fn get_domain_model_struct_ident(ast: &File) -> Result<Ident> {
                 "Only mark one struct as the domain model! Found {:#?}",
                 domain_model_type
                     .iter()
-                    .map(|tipe| get_ident(&tipe))
+                    .map(|tipe| get_ident(tipe))
                     .collect::<Vec<Result<Ident>>>(),
             ),
         )),
@@ -46,7 +46,6 @@ pub(crate) fn get_domain_model_struct_ident(ast: &File) -> Result<Ident> {
 
 #[cfg(test)]
 mod tests {
-    use syn::{parse_str, Type};
 
     use crate::utils::get_domain_model_struct::get_domain_model_struct_ident;
 

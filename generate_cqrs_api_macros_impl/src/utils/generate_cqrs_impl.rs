@@ -17,7 +17,7 @@ use super::type_2_ident::get_path;
 pub(crate) fn generate_cqrs_impl(
     domain_model_struct_ident: &Ident,
     effect: &Ident,
-    effect_variants: &Vec<Variant>,
+    effect_variants: &[Variant],
     processing_error: &Ident,
     ast: &File,
 ) -> TokenStream {
@@ -44,10 +44,10 @@ pub(crate) fn generate_cqrs_impl(
 }
 
 fn generate_cqrs_functions(
-    cqrs_fns_sig_idents: &Vec<(Ident, Vec<Ident>)>,
+    cqrs_fns_sig_idents: &[(Ident, Vec<Ident>)],
     domain_model_struct_ident: &Ident,
     effect: &Ident,
-    effect_variants: &Vec<Variant>,
+    effect_variants: &[Variant],
     processing_error: &Ident,
 ) -> TokenStream {
     let functions = cqrs_fns_sig_idents.iter().map(|(ident, args)| {
@@ -145,7 +145,7 @@ let variant_fields_idents = match &variant.fields {
     }
 }
 fn generate_cqrs_enum(
-    cqrs_fns_sig_tipes: &Vec<(Ident, Vec<Ident>)>,
+    cqrs_fns_sig_tipes: &[(Ident, Vec<Ident>)],
     domain_model_struct_ident: &Ident,
 ) -> TokenStream {
     let enum_variants = cqrs_fns_sig_tipes.iter().map(|(ident, args)| {
@@ -177,7 +177,7 @@ fn generate_cqrs_enum(
 /// extracts the signature of passed functions,
 /// returning the types of the arguments
 /// e.g.: foo(name: String, age: usize) => [foo [String, usize]]
-fn get_cqrs_fns_sig_tipes(cqrs_fns_sig: &Vec<(Ident, Vec<PatType>)>) -> Vec<(Ident, Vec<Ident>)> {
+fn get_cqrs_fns_sig_tipes(cqrs_fns_sig: &[(Ident, Vec<PatType>)]) -> Vec<(Ident, Vec<Ident>)> {
     cqrs_fns_sig
         .iter()
         .map(|(ident, args)| {
@@ -192,7 +192,7 @@ fn get_cqrs_fns_sig_tipes(cqrs_fns_sig: &Vec<(Ident, Vec<PatType>)>) -> Vec<(Ide
 /// extracts the signature of passed functions,
 /// returning the names of the arguments
 /// e.g.: foo(name: String, age: usize) => [foo [name, age]]
-fn get_cqrs_fns_sig_idents(cqrs_fns_sig: &Vec<(Ident, Vec<PatType>)>) -> Vec<(Ident, Vec<Ident>)> {
+fn get_cqrs_fns_sig_idents(cqrs_fns_sig: &[(Ident, Vec<PatType>)]) -> Vec<(Ident, Vec<Ident>)> {
     cqrs_fns_sig
         .iter()
         .map(|(ident, args)| {
@@ -320,10 +320,10 @@ fn get_cqrs_functions(
 mod tests {
 
     use quote::{format_ident, quote};
-    use syn::{parse_str, Fields, FieldsNamed, File, ItemEnum, Token, Variant};
+    use syn::{parse_str, ItemEnum, Variant};
 
     use crate::utils::generate_cqrs_impl::{
-        generate_cqrs_enum, generate_cqrs_functions, generate_cqrs_impl, get_cqrs_fns_sig,
+        generate_cqrs_enum, generate_cqrs_functions, get_cqrs_fns_sig,
         get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes, get_cqrs_functions,
     };
 
