@@ -3,10 +3,12 @@ use log::debug;
 use crate::utils::generate_cqrs_impl::generate_cqrs_impl;
 use crate::utils::generate_effect_enum::generate_effect_enum;
 use crate::utils::generate_error_enum::generate_error_enum;
+use crate::utils::generate_use_statement::generate_use_statement;
 use crate::utils::get_domain_model_struct::get_domain_model_struct_ident;
+use crate::utils::get_use_statements::get_use_statements;
 use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::Result;
 
 pub(crate) struct BasePath(pub(crate) String);
@@ -26,6 +28,11 @@ pub fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
 
 fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenStream> {
     let ast = syn::parse_file(&file_content.0)?;
+    // take all imports, just in case they are used in the generated code (like RustAutoOpaque)
+    let use_statements = get_use_statements(&ast);
+    // import all types defined in the parsed file
+    let base_use_statement = generate_use_statement(&base_path, "*");
+
     let domain_model_struct_ident = get_domain_model_struct_ident(&ast)
         .expect("Couldn't extract the domain model's name. One Struct needs to derive CqrsModel.");
     debug!("domain model name: {:#?}", domain_model_struct_ident);
@@ -41,6 +48,8 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
     );
 
     let generated_code = quote! {
+        #base_use_statement
+        #(#use_statements)*
         #generated_error_enum
         #generated_effect_enum
         #generated_cqrs_fns
@@ -71,6 +80,10 @@ mod tests {
     #[test]
     fn generate_all_from_good_file_test() {
         let expected = quote! {
+            use crate::good_source_file::*;
+            use crate::mocks::app_state_mock;
+            use crate::mocks::cqrs_traits_mock;
+            use crate::mocks::rust_auto_opaque_mock;
             use crate::good_source_file::MyGoodProcessingError;
             #[derive(thiserror :: Error, Debug)]
             pub enum ProcessingError {
@@ -116,7 +129,7 @@ mod tests {
                 }
             }
         };
-        let (base_path, content) = read_rust_file_content("../tests/good_source_file/mod.rs")
+        let (base_path, content) = read_rust_file_content("../tests/src/good_source_file.rs")
             .expect("Could not read test oracle file: ");
 
         let result = generate_code(base_path, content).unwrap();

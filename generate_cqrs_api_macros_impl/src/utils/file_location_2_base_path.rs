@@ -1,10 +1,10 @@
 pub(crate) fn file_location_2_base_path(file_path: &str) -> String {
-    let mut path_split = file_path
-        .split('/')
-        .skip_while(|element| *element != "src" && *element != "tests");
+    let mut path_split = file_path.split('/').skip_while(|element| *element != "src");
+    // .skip_while(|element| *element != "src" && *element != "tests");
     path_split
         .next()
-        .expect("file path needs to contain 'src/' or 'tests/'");
+        .expect("file path needs to contain 'src/'");
+    // .expect("file path needs to contain 'src/' or 'tests/'");
     let dirty_result = format!("crate::{}", path_split.collect::<Vec<&str>>().join("::"));
     match &dirty_result[dirty_result.rfind("::").unwrap()..] {
         "::mod.rs" => dirty_result[..dirty_result.len() - 8].to_string(),
@@ -23,7 +23,7 @@ mod tests {
     use super::file_location_2_base_path;
 
     #[test]
-    #[should_panic(expected = "file path needs to contain 'src/' or 'tests/'")]
+    #[should_panic(expected = "file path needs to contain 'src/'")]
     fn test_file_location_2_base_path_no_src() {
         let input = String::from("main.rs");
         file_location_2_base_path(&input);
@@ -40,11 +40,6 @@ mod tests {
     fn test_file_location_2_base_path_no_rs() {
         let input = String::from("src/module/mod");
         file_location_2_base_path(&input);
-    }
-    #[test]
-    fn test_file_location_2_base_path_tests_with_zero_levels() {
-        let input = String::from("tests/main.rs");
-        assert_eq!("crate::main".to_string(), file_location_2_base_path(&input));
     }
     #[test]
     fn test_file_location_2_base_path_zero_levels() {

@@ -5,5 +5,6 @@ pub(crate) mod generate_error_enum;
 pub(crate) mod generate_use_statement;
 pub(crate) mod get_domain_model_struct;
 pub(crate) mod get_enum;
+pub(crate) mod get_use_statements;
 pub(crate) mod read_rust_files;
 pub(crate) mod type_2_ident;

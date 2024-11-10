@@ -17,7 +17,7 @@ pub(crate) fn generate_error_enum(base_path: &BasePath, ast: &File) -> (Ident, T
         processing_error_enum
     );
 
-    let use_statement = generate_use_statement(base_path, &processing_error_enum);
+    let use_statement = generate_use_statement(base_path, &processing_error_enum.to_string());
     let processing_error = format_ident!("{processing_error_enum}");
 
     (
