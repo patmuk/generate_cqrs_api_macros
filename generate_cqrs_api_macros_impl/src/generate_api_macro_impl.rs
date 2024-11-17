@@ -8,7 +8,7 @@ use crate::utils::get_domain_model_struct::get_domain_model_struct_ident;
 use crate::utils::get_use_statements::get_use_statements;
 use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::Result;
 
 pub(crate) struct BasePath(pub(crate) String);

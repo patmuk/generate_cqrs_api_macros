@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_str, File, Ident};
+use syn::{parse_str, File};
 
 use crate::generate_api_macro_impl::BasePath;
 

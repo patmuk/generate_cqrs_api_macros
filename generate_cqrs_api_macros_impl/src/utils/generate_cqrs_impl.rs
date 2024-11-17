@@ -7,12 +7,11 @@ use syn::Fields;
 use syn::File;
 use syn::Ident;
 use syn::ImplItemFn;
-use syn::PatType;
 use syn::Variant;
 
+use super::type_2_ident::get_path;
 use crate::utils::type_2_ident::get_ident;
 use crate::utils::type_2_ident::get_type_name;
-use super::type_2_ident::get_path;
 
 pub(crate) fn generate_cqrs_impl(
     domain_model_struct_ident: &Ident,
@@ -24,9 +23,14 @@ pub(crate) fn generate_cqrs_impl(
     let cqrs_functions =
         get_cqrs_functions(domain_model_struct_ident, effect, processing_error, ast);
 
-    let cqrs_functions_sig = get_cqrs_fns_sig(cqrs_functions);
-    let cqrs_functions_sig_tipes = get_cqrs_fns_sig_tipes(&cqrs_functions_sig);
-    let cqrs_functions_sig_idents = get_cqrs_fns_sig_idents(&cqrs_functions_sig);
+    let merged_cqrs_fns = cqrs_functions
+        .0
+        .iter()
+        .chain(&cqrs_functions.1)
+        .collect::<Vec<_>>();
+
+    let cqrs_functions_sig_tipes = get_cqrs_fns_sig_tipes(&merged_cqrs_fns);
+    let cqrs_functions_sig_idents = get_cqrs_fns_sig_idents(&merged_cqrs_fns);
 
     let generated_cqrs_enum =
         generate_cqrs_enum(&cqrs_functions_sig_tipes, domain_model_struct_ident);
@@ -87,15 +91,15 @@ let variant_fields_idents = match &variant.fields {
         vec![]},
         _ => {
             let variant_fields = match &variant.fields{
-                Fields::Unit => unreachable!(),   
+                Fields::Unit => unreachable!(),
                     Fields::Named(fields_named) => &fields_named.named,
                 Fields::Unnamed(fields_unnamed) => &fields_unnamed.unnamed,
             };
-            variant_fields.iter().map(|field|                
+            variant_fields.iter().map(|field|
                 {
                     if let Some(field_name) = &field.ident {
                         field_name.to_owned()
-                    } else {       
+                    } else {
                         get_type_name(&field.ty).expect("Couldn't get the types name!")
                     }
                 }
@@ -105,7 +109,7 @@ let variant_fields_idents = match &variant.fields {
 
     let lhs_ident = format_ident!("{}", variant.ident);
     let rhs_ident = format_ident!("{}{}", domain_model_struct_ident, variant.ident);
-    
+
     if variant_fields_idents.is_empty() {
         quote! {
             #effect::#lhs_ident => Effect :: #rhs_ident,
@@ -118,31 +122,61 @@ let variant_fields_idents = match &variant.fields {
 });
 
     quote! {
-        impl Cqrs {
-            pub(crate) fn process_with_app_state(
-                self,
-                app_state: &AppState,
-            ) -> Result<Vec<Effect>, ProcessingError> {
-                let result = match self {
-                    #(#match_statement)*
-                }
-                .map_err(ProcessingError::#processing_error)?
+           impl TodoQuery {
+        fn process_with_lifecycle(
+            self,
+            lifecycle: &LifecycleImpl,
+        ) -> Result<Vec<Effect>, ProcessingError> {
+            let todo_list_model_lock = &lifecycle.app_state.todo_list_model_lock;
+            let result = match self {
+                TodoQuery::AllTodos => todo_list_model_lock.query_get_all_todos(),
+                TodoQuery::GetTodo(todo_pos) => todo_list_model_lock.query_get_todo(todo_pos),
+            }
+            .map_err(ProcessingError::TodoListProcessingError)?;
+            Ok(result
                 .into_iter()
                 .map(|effect| match effect {
-                    #(#effects_match_statements)*
+                    TodoListEffect::RenderTodoList(model_lock) => {
+                        Effect::TodoListEffectRenderTodoList(model_lock)
+                    }
+                    TodoListEffect::RenderTodoItem(todo_item) => {
+                        Effect::TodoListEffectRenderTodoItem(todo_item)
+                    }
                 })
-                .collect();
-                Ok(result)
-            }
-            pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                let app_state = &Lifecycle::get().app_state;
-                let result = self.process_with_app_state(app_state)?;
-                //persist the state, but only if dirty
-                let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
-                Ok(result)
-            }
+                .collect())
         }
     }
+    impl TodoCommand {
+        fn process_with_lifecycle(
+            self,
+            lifecycle: &LifecycleImpl,
+        ) -> Result<Vec<Effect>, ProcessingError> {
+            let app_state = &lifecycle.app_state;
+            let todo_list_model_lock = &app_state.todo_list_model_lock;
+            let (state_changed, result) = match self {
+                TodoCommand::AddTodo(todo) => todo_list_model_lock.command_add_todo(todo),
+                TodoCommand::RemoveTodo(todo_pos) => todo_list_model_lock.command_remove_todo(todo_pos),
+                TodoCommand::CleanList => todo_list_model_lock.command_clean_list(),
+            }
+            .map_err(ProcessingError::TodoListProcessingError)?;
+            if state_changed {
+                app_state.mark_dirty();
+                lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+            }
+            Ok(result
+                .into_iter()
+                .map(|effect| match effect {
+                    TodoListEffect::RenderTodoList(model_lock) => {
+                        Effect::TodoListEffectRenderTodoList(model_lock)
+                    }
+                    TodoListEffect::RenderTodoItem(todo_item) => {
+                        Effect::TodoListEffectRenderTodoItem(todo_item)
+                    }
+                })
+                .collect())
+        }
+    }
+        }
 }
 fn generate_cqrs_enum(
     cqrs_fns_sig_tipes: &[(Ident, Vec<Ident>)],
@@ -177,138 +211,167 @@ fn generate_cqrs_enum(
 /// extracts the signature of passed functions,
 /// returning the types of the arguments
 /// e.g.: foo(name: String, age: usize) => [foo [String, usize]]
-fn get_cqrs_fns_sig_tipes(cqrs_fns_sig: &[(Ident, Vec<PatType>)]) -> Vec<(Ident, Vec<Ident>)> {
-    cqrs_fns_sig
+// fn get_cqrs_fns_sig_tipes(cqrs_fns_sig: &[(Ident, Vec<PatType>)]) -> Vec<(Ident, Vec<Ident>)> {
+fn get_cqrs_fns_sig_tipes(cqrs_fns: &[&ImplItemFn]) -> Vec<(Ident, Vec<Ident>)> {
+    cqrs_fns
         .iter()
-        .map(|(ident, args)| {
-            let args_tipes = args
+        .map(|function| {
+            let args_tipes = function
+                .sig
+                .inputs
                 .iter()
-                .filter_map(|arg| get_ident(&arg.ty).ok())
+                .filter_map(|arg| match arg {
+                    syn::FnArg::Typed(pat_type) => get_ident(&pat_type.ty).ok(),
+                    syn::FnArg::Receiver(_) => None,
+                })
                 .collect::<Vec<Ident>>();
-            (ident.to_owned(), args_tipes)
+            (function.sig.ident.to_owned(), args_tipes)
         })
         .collect::<Vec<(Ident, Vec<Ident>)>>()
 }
 /// extracts the signature of passed functions,
 /// returning the names of the arguments
 /// e.g.: foo(name: String, age: usize) => [foo [name, age]]
-fn get_cqrs_fns_sig_idents(cqrs_fns_sig: &[(Ident, Vec<PatType>)]) -> Vec<(Ident, Vec<Ident>)> {
-    cqrs_fns_sig
+fn get_cqrs_fns_sig_idents(cqrs_fns: &[&ImplItemFn]) -> Vec<(Ident, Vec<Ident>)> {
+    cqrs_fns
         .iter()
-        .map(|(ident, args)| {
-            let args_tipes = args
+        .map(|function| {
+            let args_tipes = function
+                .sig
+                .inputs
                 .iter()
-                .filter_map(|arg| match &*arg.pat {
-                    syn::Pat::Ident(pat_ident) => Some(pat_ident.ident.clone()),
-                    _ => None,
+                .filter_map(|arg| match arg {
+                    syn::FnArg::Typed(pat_type) => {
+                        match *pat_type.pat.clone() {
+                            syn::Pat::Ident(pat_ident) => Some(pat_ident.ident),
+                            // syn::Pat::Path(expr_path) => todo!(),
+                            // syn::Pat::Type(pat_type) => todo!(),
+                            _ => None,
+                        }
+                    }
+                    syn::FnArg::Receiver(_) => None,
                 })
                 .collect::<Vec<Ident>>();
-            (ident.to_owned(), args_tipes)
+            (function.sig.ident.to_owned(), args_tipes)
         })
         .collect::<Vec<(Ident, Vec<Ident>)>>()
 }
 
-fn get_cqrs_fns_sig(cqrs_functions: Vec<ImplItemFn>) -> Vec<(Ident, Vec<PatType>)> {
-    let cqrs_functions_sig = cqrs_functions
-        .iter()
-        .map(|function| {
-            let fn_ident = function.sig.ident.to_owned();
-            let arg_types = function
-                .sig
-                .inputs
-                .iter()
-                .filter_map(|arg| {
-                    if let syn::FnArg::Typed(arg) = arg {
-                        Some(arg.to_owned())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<PatType>>();
-            (fn_ident, arg_types)
-        })
-        .collect::<Vec<(Ident, Vec<PatType>)>>();
-    cqrs_functions_sig
-}
-
+/// @returns tuple (CQRS Queries, CQRS Commands)
 fn get_cqrs_functions(
     domain_model_struct_ident: &Ident,
     effect: &Ident,
     processing_error: &Ident,
     ast: &File,
-) -> Vec<ImplItemFn> {
+) -> (Vec<ImplItemFn>, Vec<ImplItemFn>) {
+    let domain_model_lock_struct_ident = format_ident!("{domain_model_struct_ident}Lock");
     let cqrs_fns = ast
         .items
         .iter()
         .filter_map(|item| {
-            // Filter for non-trait implementations of domain_struct_ident
-            let item_impl = match item {
-                syn::Item::Impl(item_impl) if item_impl.trait_.is_none() => item_impl,
-                _ => return None,
-            };
-            if get_ident(&item_impl.self_ty).ok()? != *domain_model_struct_ident {
-                return None;
-            }
-
-            // Check if the impl block functions have the right return type
-            let functions = item_impl.items.iter().filter_map(|item| match item {
-                syn::ImplItem::Fn(impl_item_fn) => {
-                    let output_type = match &impl_item_fn.sig.output {
-                        syn::ReturnType::Type(_, tipe) => get_path(tipe).ok()?,
-                        _ => return None,
-                    };
-
-                    // Match Result<Vec<_>, processing_error>
-                    let result_tipe = output_type.segments.last()?;
-                    if result_tipe.ident != "Result" {
-                        return None;
-                    }
-
-                    let generic_args = match &result_tipe.arguments {
-                        syn::PathArguments::AngleBracketed(args) => args,
-                        _ => return None,
-                    };
-
-                    let mut arg_pairs = generic_args.args.iter().filter_map(|arg| match arg {
-                        syn::GenericArgument::Type(t) => Some(get_path(t).ok()?.segments),
-                        _ => None,
-                    });
-
-                    // Match Vec<effect> and processing_error in Result
-                    let left = arg_pairs.next()?;
-                    let right = arg_pairs.next()?;
-                    //TODO use get_type_ident
-                    if right.last()?.ident == *processing_error && left.first()?.ident == "Vec" {
-                        let inner_effect = match &left.last()?.arguments {
-                            syn::PathArguments::AngleBracketed(args) => args.args.last()?,
-                            _ => return None,
-                        };
-                        match inner_effect {
-                            syn::GenericArgument::Type(t) => {
-                                if get_ident(t).ok()? == *effect {
-                                // if get_type_path(t).ok()?.segments.last()?.ident == *effect {
-                                    Some(impl_item_fn.clone())
-                                } else {
-                                    None
-                                }
-                            }
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    }
+            // Filter for the lock struct
+            match item {
+                syn::Item::Impl(item_impl)
+                    if get_ident(&item_impl.self_ty).ok()? == domain_model_lock_struct_ident =>
+                {
+                    Some(item_impl)
                 }
                 _ => None,
-            });
-            Some(functions.collect::<Vec<_>>())
+            }
         })
-        .flatten()
-        .collect::<Vec<ImplItemFn>>();
-    if cqrs_fns.is_empty() {
+        // get all functions of the domain_model_lock struct
+        .flat_map(|domain_model_lock_struckt| {
+            domain_model_lock_struckt
+                .items
+                .iter()
+                // get all functions
+                .filter_map(|item| match item {
+                    syn::ImplItem::Fn(impl_item_fn) => Some(impl_item_fn),
+                    _ => None,
+                })
+                .collect::<Vec<&ImplItemFn>>()
+        })
+        // get all cqrs functions (Result<_, ProcessingError>)
+        .filter_map(|function| {
+            // get the return type
+            let output_type = match &function.sig.output {
+                syn::ReturnType::Type(_, tipe) => get_path(tipe).ok()?,
+                _ => return None,
+            };
+            // filter for Result<_>
+            let result_tipe = output_type.segments.last()?;
+            if result_tipe.ident != "Result" {
+                return None;
+            }
+            // get Result<inner_tipes>
+            let mut inner_tipes = match &result_tipe.arguments {
+                syn::PathArguments::AngleBracketed(arguments) => arguments.args.iter(),
+                _ => return None,
+            };
+            // get Result<arg_pairs>, meaning the Result<left, right> content
+            let left = inner_tipes.next()?;
+            let right = inner_tipes.next()?;
+            // filter out if there is something else!
+            if inner_tipes.next().is_some() {
+                return None;
+            }
+            // filter for Result<_, ProcessingError> (to get cqrs fns only)
+            match right {
+                syn::GenericArgument::Type(tipe) => match get_ident(tipe) {
+                    Err(_) => None,
+                    Ok(right_tipe) if right_tipe == *processing_error => {
+                        Some((function, left.to_owned()))
+                    }
+                    Ok(_) => None,
+                },
+                _ => None,
+            }
+        })
+        // Now we can focus on Result<left, _> only
+        // iter.item is (filtered item_fn and left in the return type Result<left, ProcessingError>)
+        // filter for cqrs_command: (StatusChanged, Vec<_>) or cqrs_query: Vec<_>
+        .fold((vec![], vec![]), |mut acc, (impl_fn, left)| {
+            // sort to (cqrs_command, cqrs_query), discard all others
+            match left {
+                syn::GenericArgument::Type(tipe) => {
+                    match tipe {
+                        // this should be a Vec<Effect>, indicating a CQRS Query
+                        syn::Type::Path(type_path)
+                            if match_vec_effect(&type_path.path.segments, effect) =>
+                        {
+                            acc.0.push(impl_fn.to_owned());
+                            acc
+                        }
+                        // this should be a (StatusChanged, Vec<Effect>), indicating a CQRS Command
+                        syn::Type::Tuple(type_tuple) => {
+                            let mut type_tuple_iter = type_tuple.elems.iter();
+                            let state_changed = type_tuple_iter.next();
+                            let vec_effect = type_tuple_iter.next();
+                            if type_tuple_iter.next().is_some() {
+                                acc
+                            } else if state_changed.is_some_and(|tipe| {
+                                get_ident(tipe).is_ok_and(|i| i == "StateChanged")
+                            }) && vec_effect.is_some_and(|tipe| {
+                                get_path(tipe)
+                                    .is_ok_and(|path| match_vec_effect(&path.segments, effect))
+                            }) {
+                                acc.1.push(impl_fn.to_owned());
+                                acc
+                            } else {
+                                acc
+                            }
+                        }
+                        _ => acc,
+                    }
+                }
+                _ => acc,
+            }
+        });
+    if cqrs_fns.0.is_empty() && cqrs_fns.1.is_empty() {
         panic!(
             r#"Did not find a single cqrs-function! Be sure to implement them like:
-            impl {domain_model_struct_ident}{{
-                fn my_cqrs_function(app_state : & AppState, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<Vec<{effect}, {processing_error}>>{{...}}
+            impl {domain_model_lock_struct_ident}{{
+                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(StateChanged, Vec<{effect}), {processing_error}>>{{...}}
             }}
             "#
         )
@@ -316,21 +379,48 @@ fn get_cqrs_functions(
     cqrs_fns
 }
 
+fn match_vec_effect(
+    fn_to_match: &syn::punctuated::Punctuated<syn::PathSegment, syn::token::PathSep>,
+    effect: &Ident,
+) -> bool {
+    if fn_to_match.len() != 1 {
+        return false;
+    }
+    let Some(vec) = fn_to_match.first() else {
+        return false;
+    };
+
+    if vec.ident != "Vec" {
+        return false;
+    }
+    match vec.arguments.to_owned() {
+        syn::PathArguments::AngleBracketed(angle_bracketed_generic_arguments) => {
+            match angle_bracketed_generic_arguments.args.first() {
+                Some(syn::GenericArgument::Type(t)) => {
+                    if let Ok(inner_tipe_ident) = get_ident(t) {
+                        inner_tipe_ident == *effect
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use quote::{format_ident, quote};
-    use syn::{parse_str, ItemEnum, Variant};
 
-    use crate::utils::generate_cqrs_impl::{
-        generate_cqrs_enum, generate_cqrs_functions, get_cqrs_fns_sig,
-        get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes, get_cqrs_functions,
-    };
+    use crate::utils::generate_cqrs_impl::get_cqrs_functions;
 
     const CODE: &str = r#"
             impl NotMyModel {
                 pub(crate) fn fake(
-                    app_state: &AppState,
+                    &self,
                     todo_pos: usize,
                 ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
                     let model_lock = Self::get_model_lock(app_state);
@@ -346,25 +436,21 @@ mod tests {
                     }
                 }
             }
-            impl MyGoodDomainModel {
+            impl MyGoodDomainModelLock {
                 pub(crate) fn wrong_fn_effect_type(
-                    app_state: &AppState,
+                    &self,
                     todo_pos: usize,
                 ) -> Result<Vec<MyWrongEffect>, MyGoodProcessingError> {
-                    let model_lock = Self::get_model_lock(app_state);
-                    let items = &mut model_lock.blocking_write().items;
+                    let items = &mut self.lock.blocking_write().items;
                     if todo_pos > items.len() {
                         Err(MyGoodProcessingError::ItemDoesNotExist(todo_pos))
                     } else {
                         items.remove(todo_pos - 1);
-                        app_state.mark_dirty();
-                        Ok(vec![MyGoodDomainModelEffect::RenderItems(
-                            model_lock.clone(),
-                        )])
+                        Ok((true, vec![TodoListEffect::RenderTodoList(self.clone())]))
                     }
                 }
                 pub(crate) fn wrong_fn_error_type(
-                    app_state: &AppState,
+                    &self,
                     todo_pos: usize,
                 ) -> Result<Vec<MyGoodDomainModelEffect>, MyWrongError> {
                     let model_lock = Self::get_model_lock(app_state);
@@ -380,19 +466,15 @@ mod tests {
                     }
                 }
                 pub(crate) fn remove_item(
-                    app_state: &AppState,
-                    todo_pos: usize,
-                ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
-                    let model_lock = Self::get_model_lock(app_state);
-                    let items = &mut model_lock.blocking_write().items;
-                    if todo_pos > items.len() {
-                        Err(MyGoodProcessingError::ItemDoesNotExist(todo_pos))
+                    &self,
+                    item_pos: usize,
+                ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                    let items = &mut self.lock.blocking_write().items;
+                    if item_pos > items.len() {
+                        Err(MyGoodProcessingError::ItemDoesNotExist(item_pos))
                     } else {
-                        items.remove(todo_pos - 1);
-                        app_state.mark_dirty();
-                        Ok(vec![MyGoodDomainModelEffect::RenderItems(
-                            model_lock.clone(),
-                        )])
+                        items.remove(item_pos - 1);
+                        Ok(true, vec![MyGoodDomainModelEffect::RenderItems(model_lock.clone())])
                     }
                 }
             }
@@ -401,39 +483,62 @@ mod tests {
                     self.items.iter().map(|item| item.text.clone()).collect()
                 }
 
-                pub(crate) fn add_item(
-                    app_state: &AppState,
+                pub(crate) fn add_item_2_model(
+                    &self,
                     item: String,
                     priority: usize,
-                ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
-                    let model_lock = Self::get_model_lock(app_state);
-                    model_lock
-                        .blocking_write()
-                        .items
-                        .push(DomainItem { text: item });
-                    app_state.mark_dirty();
+                ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                    self.lock
+                    .blocking_write()
+                    .items
+                    .push(Item { text: item });
                     // this clone is cheap, as it is on ARC (RustAutoOpaque>T> = Arc<RwMutex<T>>)
-                    Ok(vec![MyGoodDomainModelEffect::RenderItems(
-                        model_lock.clone(),
-                    )])
+                    Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
                 }
-                pub(crate) fn clean_list(
-                    app_state: &AppState,
-                ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
-                    let model_lock = Self::get_model_lock(app_state);
-                    model_lock.blocking_write().items.clear();
-                    app_state.mark_dirty();
-                    Ok(vec![MyGoodDomainModelEffect::RenderItems(
-                        model_lock.clone(),
-                    )])
+            }
+            pub struct MyGoodDomainModelLock  {
+                pub lock: RustAutoOpaque<MyGoodDomainMode>,
+            }
+
+            impl MyGoodDomainModelLock {
+                pub fn get_items_as_string(&self) -> Vec<String> {
+                    self.items.iter().map(|item| item.text.clone()).collect()
+                }
+
+                pub(crate) fn add_item(
+                    &self,
+                    item: String,
+                    priority: usize,
+                ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                    self.lock
+                    .blocking_write()
+                    .items
+                    .push(DomainItem { text: item });
+                    // this clone is cheap, as it is on ARC (RustAutoOpaque>T> = Arc<RwMutex<T>>)
+                    Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
+                }
+                pub(crate) fn command_clean_list(
+                    &self,
+                ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                    self.lock.blocking_write().items.clear();
+                    Ok((true, vec![MyGoodDomainModelEffect::RenderItems(self.clone())]))
                 }
                 pub(crate) fn get_all_items(
-                    app_state: &AppState,
+                    &self,
                 ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
-                    let model_lock = MyGoodDomainModel::get_model_lock(app_state);
-                    Ok(vec![MyGoodDomainModelEffect::RenderItems(
-                        model_lock.clone(),
-                    )])
+                    Ok(vec![MyGoodDomainModelEffect::RenderItems(self.clone())])
+                }
+                pub(crate) fn query_get_item(
+                    &self,
+                    item_pos: usize,
+                ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
+                    let items = &self.lock.blocking_read().items;
+                    if item_pos > items.len() {
+                        Err(ItemListProcessingError::ItemDoesNotExist(item_pos))
+                    } else {
+                        let item = &items[item_pos - 1];
+                        Ok(vec![MyGoodDomainModelEffect::RenderItems(item.clone())])
+                   }
                 }
             }
         "#;
@@ -441,128 +546,198 @@ mod tests {
     #[test]
     fn get_cqrs_fns_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
-        let cqrs_functions = get_cqrs_functions(
+        let (cqrs_queries, cqrs_commands) = get_cqrs_functions(
             &format_ident!("MyGoodDomainModel"),
             &format_ident!("MyGoodDomainModelEffect"),
             &format_ident!("MyGoodProcessingError"),
             &ast,
         );
         let result = quote! {
-            #(#cqrs_functions)*
+            #(#cqrs_queries)*
+            #(#cqrs_commands)*
         };
 
-        let expected = "pub (crate) fn remove_item (app_state : & AppState , todo_pos : usize ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; let items = & mut model_lock . blocking_write () . items ; if todo_pos > items . len () { Err (MyGoodProcessingError :: ItemDoesNotExist (todo_pos)) } else { items . remove (todo_pos - 1) ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } } pub (crate) fn add_item (app_state : & AppState , item : String , priority : usize ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; model_lock . blocking_write () . items . push (DomainItem { text : item }) ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } pub (crate) fn clean_list (app_state : & AppState ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; model_lock . blocking_write () . items . clear () ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } pub (crate) fn get_all_items (app_state : & AppState ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = MyGoodDomainModel :: get_model_lock (app_state) ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) }";
+        let expected = quote! {
+        pub (crate) fn get_all_items (&self ,) -> Result <  Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > {
+            Ok(vec![MyGoodDomainModelEffect::RenderItems(self.clone())])
+        }
+        pub(crate) fn query_get_item(
+            &self,
+            item_pos: usize,
+        ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
+            let items = &self.lock.blocking_read().items;
+            if item_pos > items.len() {
+                Err(ItemListProcessingError::ItemDoesNotExist(item_pos))
+            } else {
+                let item = &items[item_pos - 1];
+                Ok(vec![MyGoodDomainModelEffect::RenderItems(item.clone())])
+            }
+        }
+        pub(crate) fn remove_item(
+            &self,
+            item_pos: usize,
+        ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+            let items = &mut self.lock.blocking_write().items;
+            if item_pos > items.len() {
+                Err(MyGoodProcessingError::ItemDoesNotExist(item_pos))
+            } else {
+                items.remove(item_pos - 1);
+                Ok( true, vec![MyGoodDomainModelEffect::RenderItems(model_lock.clone())] )
+            }
+        }
+        pub(crate) fn add_item(
+            &self,
+            item: String,
+            priority: usize,
+        ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+            self.lock.blocking_write().items.push(DomainItem { text: item });
+            Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
+        }
+        pub(crate) fn command_clean_list(
+            &self,
+        ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+            self.lock.blocking_write().items.clear();
+            Ok((true, vec![MyGoodDomainModelEffect::RenderItems(self.clone())]))
+        }};
         assert_eq!(expected.to_string(), result.to_string());
     }
     #[test]
     #[should_panic = "Did not find a single cqrs-function! Be sure to implement them like:
-            impl SomethingWrong{
-                fn my_cqrs_function(app_state : & AppState, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<Vec<MyGoodDomainModelEffect, MyGoodProcessingError>>{...}
+            impl SomeModelLock{
+                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(StateChanged, Vec<SomeModelEffect), SomeModelError>>{...}
             }"]
     fn get_cqrs_fns_fail_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
-        let cqrs_functions = get_cqrs_functions(
-            &format_ident!("SomethingWrong"),
+        let (cqrs_queries, cqrs_commands) = get_cqrs_functions(
+            &format_ident!("SomeModel"),
+            &format_ident!("SomeModelEffect"),
+            &format_ident!("SomeModelError"),
+            &ast,
+        );
+        let result = quote! {
+            #(#cqrs_queries)*
+            #(#cqrs_commands)*
+        };
+
+        let expected = "pub (crate) fn remove_item (app_state : & AppState , todo_pos : usize ,) -> Result < Vec < SomeModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; let items = & mut model_lock . blocking_write () . items ; if todo_pos > items . len () { Err (MyGoodProcessingError :: ItemDoesNotExist (todo_pos)) } else { items . remove (todo_pos - 1) ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } } pub (crate) fn add_item (app_state : & AppState , item : String ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; model_lock . blocking_write () . items . push (DomainItem { text : item }) ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } pub (crate) fn clean_list (app_state : & AppState ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; model_lock . blocking_write () . items . clear () ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } pub (crate) fn get_all_items (app_state : & AppState ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = MyGoodDomainModel :: get_model_lock (app_state) ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) }";
+        assert_eq!(expected.to_string(), result.to_string());
+    }
+
+    // #[test]
+    // fn generate_cqrs_enum_test() {
+    //     let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
+
+    //     // let result = generate_cqrs_enum(&get_cqrs_fns_sig_tipes(&get_cqrs_fns_sig(
+    //     let result = generate_cqrs_enum(
+    //         &get_cqrs_fns_sig_tipes(&get_cqrs_fns_sig(get_cqrs_functions(
+    //             &format_ident!("MyGoodDomainModel"),
+    //             &format_ident!("MyGoodDomainModelEffect"),
+    //             &format_ident!("MyGoodProcessingError"),
+    //             &ast,
+    //         ))),
+    //         &format_ident!("MyGoodDomainModel"),
+    //     );
+    //     let expected = quote! {
+    //         pub enum Cqrs {
+    //             MyGoodDomainModelRemoveItem(usize),
+    //             MyGoodDomainModelAddItem(String, usize),
+    //             MyGoodDomainModelCleanList,
+    //             MyGoodDomainModelGetAllItems
+    //         }
+    //     };
+
+    //     assert_eq!(expected.to_string(), result.to_string());
+    // }
+    #[test]
+    fn print_found_fns() {
+        let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
+
+        let result = get_cqrs_functions(
+            &format_ident!("MyGoodDomainModel"),
             &format_ident!("MyGoodDomainModelEffect"),
             &format_ident!("MyGoodProcessingError"),
             &ast,
         );
-        let result = quote! {
-            #(#cqrs_functions)*
-        };
-
-        let expected = "pub (crate) fn remove_item (app_state : & AppState , todo_pos : usize ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; let items = & mut model_lock . blocking_write () . items ; if todo_pos > items . len () { Err (MyGoodProcessingError :: ItemDoesNotExist (todo_pos)) } else { items . remove (todo_pos - 1) ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } } pub (crate) fn add_item (app_state : & AppState , item : String ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; model_lock . blocking_write () . items . push (DomainItem { text : item }) ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } pub (crate) fn clean_list (app_state : & AppState ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = Self :: get_model_lock (app_state) ; model_lock . blocking_write () . items . clear () ; app_state . mark_dirty () ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) } pub (crate) fn get_all_items (app_state : & AppState ,) -> Result < Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > { let model_lock = MyGoodDomainModel :: get_model_lock (app_state) ; Ok (vec ! [MyGoodDomainModelEffect :: RenderItems (model_lock . clone () ,)]) }";
-        assert_eq!(expected.to_string(), result.to_string());
-    }
-
-    #[test]
-    fn generate_cqrs_enum_test() {
-        let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
-
-        // let result = generate_cqrs_enum(&get_cqrs_fns_sig_tipes(&get_cqrs_fns_sig(
-        let result = generate_cqrs_enum(
-            &get_cqrs_fns_sig_tipes(&get_cqrs_fns_sig(get_cqrs_functions(
-                &format_ident!("MyGoodDomainModel"),
-                &format_ident!("MyGoodDomainModelEffect"),
-                &format_ident!("MyGoodProcessingError"),
-                &ast,
-            ))),
-            &format_ident!("MyGoodDomainModel"),
+        assert_eq!(
+            vec![
+                "get_all_items",
+                "query_get_item",
+                "remove_item",
+                "add_item",
+                "command_clean_list"
+            ],
+            result
+                .0
+                .iter()
+                .chain(&result.1)
+                .map(|fns| fns.sig.ident.to_string())
+                .collect::<Vec<String>>()
         );
-        let expected = quote! {
-            pub enum Cqrs {
-                MyGoodDomainModelRemoveItem(usize),
-                MyGoodDomainModelAddItem(String, usize),
-                MyGoodDomainModelCleanList,
-                MyGoodDomainModelGetAllItems
-            }
-        };
-
-        assert_eq!(expected.to_string(), result.to_string());
     }
-    #[test]
-    fn generate_cqrs_fns_test() {
-        let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
 
-        let result = generate_cqrs_functions(
-            &get_cqrs_fns_sig_idents(&get_cqrs_fns_sig(get_cqrs_functions(
-                &format_ident!("MyGoodDomainModel"),
-                &format_ident!("MyGoodDomainModelEffect"),
-                &format_ident!("MyGoodProcessingError"),
-                &ast,
-            ))),
-            &format_ident!("MyGoodDomainModel"),
-            &format_ident!("MyGoodDomainModelEffect"),
-            &parse_str::<ItemEnum>(
-                "
-                       pub enum MyGoodDomainModelEffect {
-                          RenderModel(String),
-                          RenderModelItems(Vec<MyItems>),
-                          DeleteModel,
-                          PostitionModel(String, Usize),
-                       }
-                   ",
-            )
-            .expect("Cannot parse test oracle!")
-            .variants
-            .into_pairs()
-            .map(|punctuated| punctuated.value().to_owned())
-            .collect::<Vec<Variant>>(),
-            &format_ident!("MyGoodProcessingError"),
-        );
-        // TODO check if comma after arg type is invalid rust code
-        let expected = quote! {
-        impl Cqrs {
-            pub(crate) fn process_with_app_state(
-                self,
-                app_state: &AppState,
-            ) -> Result<Vec<Effect>, ProcessingError> {
-                let result = match self {
-                    Cqrs::MyGoodDomainModelRemoveItem(todo_pos) => MyGoodDomainModel::remove_item(app_state, todo_pos),
-                    Cqrs::MyGoodDomainModelAddItem(item, priority) => MyGoodDomainModel::add_item(app_state, item, priority),
-                    Cqrs::MyGoodDomainModelCleanList => MyGoodDomainModel::clean_list(app_state),
-                    Cqrs::MyGoodDomainModelGetAllItems => MyGoodDomainModel::get_all_items(app_state),
-                }
-                .map_err(ProcessingError::MyGoodProcessingError)?
-                .into_iter()
-                .map(|effect| match effect {
-                    MyGoodDomainModelEffect :: RenderModel (string) => Effect :: MyGoodDomainModelRenderModel (string) , 
-                    MyGoodDomainModelEffect :: RenderModelItems (vec_my_items) => Effect :: MyGoodDomainModelRenderModelItems (vec_my_items) , 
-                    MyGoodDomainModelEffect :: DeleteModel => Effect :: MyGoodDomainModelDeleteModel , 
-                    MyGoodDomainModelEffect :: PostitionModel (string , usize) => Effect :: MyGoodDomainModelPostitionModel (string , usize) , 
-                })
-                .collect();
-                Ok(result)
-            }
-            pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                let app_state = &Lifecycle::get().app_state;
-                let result = self.process_with_app_state(app_state)?;
-                let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
-                Ok(result)
-            }
-        }
-                };
+    // #[test]
+    // fn generate_cqrs_fns_test() {
+    //     let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
 
-        assert_eq!(expected.to_string(), result.to_string());
-    }
+    //     let result = generate_cqrs_functions(
+    //         &get_cqrs_fns_sig_idents(&get_cqrs_fns_sig(get_cqrs_functions(
+    //             &format_ident!("MyGoodDomainModel"),
+    //             &format_ident!("MyGoodDomainModelEffect"),
+    //             &format_ident!("MyGoodProcessingError"),
+    //             &ast,
+    //         ))),
+    //         &format_ident!("MyGoodDomainModel"),
+    //         &format_ident!("MyGoodDomainModelEffect"),
+    //         &parse_str::<ItemEnum>(
+    //             "
+    //                    pub enum MyGoodDomainModelEffect {
+    //                       RenderModel(String),
+    //                       RenderModelItems(Vec<MyItems>),
+    //                       DeleteModel,
+    //                       PostitionModel(String, Usize),
+    //                    }
+    //                ",
+    //         )
+    //         .expect("Cannot parse test oracle!")
+    //         .variants
+    //         .into_pairs()
+    //         .map(|punctuated| punctuated.value().to_owned())
+    //         .collect::<Vec<Variant>>(),
+    //         &format_ident!("MyGoodProcessingError"),
+    //     );
+    //     // TODO check if comma after arg type is invalid rust code
+    //     let expected = quote! {
+    //     impl Cqrs {
+    //         pub(crate) fn process_with_app_state(
+    //             self,
+    //             &self,
+    //         ) -> Result<Vec<Effect>, ProcessingError> {
+    //             let result = match self {
+    //                 Cqrs::MyGoodDomainModelRemoveItem(todo_pos) => MyGoodDomainModel::remove_item(app_state, todo_pos),
+    //                 Cqrs::MyGoodDomainModelAddItem(item, priority) => MyGoodDomainModel::add_item(app_state, item, priority),
+    //                 Cqrs::MyGoodDomainModelCleanList => MyGoodDomainModel::clean_list(app_state),
+    //                 Cqrs::MyGoodDomainModelGetAllItems => MyGoodDomainModel::get_all_items(app_state),
+    //             }
+    //             .map_err(ProcessingError::MyGoodProcessingError)?
+    //             .into_iter()
+    //             .map(|effect| match effect {
+    //                 MyGoodDomainModelEffect :: RenderModel (string) => Effect :: MyGoodDomainModelRenderModel (string) ,
+    //                 MyGoodDomainModelEffect :: RenderModelItems (vec_my_items) => Effect :: MyGoodDomainModelRenderModelItems (vec_my_items) ,
+    //                 MyGoodDomainModelEffect :: DeleteModel => Effect :: MyGoodDomainModelDeleteModel ,
+    //                 MyGoodDomainModelEffect :: PostitionModel (string , usize) => Effect :: MyGoodDomainModelPostitionModel (string , usize) ,
+    //             })
+    //             .collect();
+    //             Ok(result)
+    //         }
+    //         pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+    //             let app_state = &Lifecycle::get().app_state;
+    //             let result = self.process_with_app_state(app_state)?;
+    //             let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
+    //             Ok(result)
+    //         }
+    //     }
+    //             };
+
+    //     assert_eq!(expected.to_string(), result.to_string());
+    // }
 }
