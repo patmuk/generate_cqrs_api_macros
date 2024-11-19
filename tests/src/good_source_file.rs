@@ -27,11 +27,14 @@ impl MyGoodDomainModel {
     pub fn get_items_as_string(&self) -> Vec<String> {
         self.items.iter().map(|item| item.text.clone()).collect()
     }
+}
 
+#[allow(dead_code)]
+impl MyGoodDomainModelLock {
     pub(crate) fn add_item(
-        app_state: &AppState,
+        &self,
         item: String,
-    ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
+    ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
         let model_lock = Self::get_model_lock(app_state);
         model_lock
             .blocking_write()
@@ -44,9 +47,9 @@ impl MyGoodDomainModel {
         )])
     }
     pub(crate) fn remove_item(
-        app_state: &AppState,
+        &self,
         todo_pos: usize,
-    ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
+    ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
         let model_lock = Self::get_model_lock(app_state);
         let items = &mut model_lock.blocking_write().items;
         if todo_pos > items.len() {
@@ -60,8 +63,8 @@ impl MyGoodDomainModel {
         }
     }
     pub(crate) fn clean_list(
-        app_state: &AppState,
-    ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
+        &self,
+    ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
         let model_lock = Self::get_model_lock(app_state);
         model_lock.blocking_write().items.clear();
         app_state.mark_dirty();
@@ -70,7 +73,7 @@ impl MyGoodDomainModel {
         )])
     }
     pub(crate) fn get_all_items(
-        app_state: &AppState,
+        &self,
     ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
         let model_lock = MyGoodDomainModel::get_model_lock(app_state);
         Ok(vec![MyGoodDomainModelEffect::RenderItems(

@@ -85,6 +85,7 @@ mod tests {
             use crate::mocks::cqrs_traits_mock;
             use crate::mocks::rust_auto_opaque_mock;
             use crate::good_source_file::MyGoodProcessingError;
+
             #[derive(thiserror :: Error, Debug)]
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
@@ -95,37 +96,70 @@ mod tests {
             pub enum Effect {
                 MyGoodDomainModelRenderItems(RustAutoOpaque<MyGoodDomainModel>)
             }
-            pub enum Cqrs {
-                MyGoodDomainModelAddItem(String),
-                MyGoodDomainModelRemoveItem(usize),
-                MyGoodDomainModelCleanList,
-                MyGoodDomainModelGetAllItems
+            pub enum MyGoodDomainModelQuery {
+                GetAllItems
             }
-            impl Cqrs {
-                pub(crate) fn process_with_app_state(
+            pub enum MyGoodDomainModelCommand {
+                AddItem(String),
+                CleanList,
+                RemoveItem(usize)
+            }
+
+            impl Cqrs for MyGoodDomainModelQuery {
+                fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                    self.process_with_lifecycle(LifecycleImpl::get())
+                }
+            }
+            impl MyGoodDomainModelQuery {
+                fn process_with_lifecycle(
                     self,
-                    app_state: &AppState,
+                    lifecycle: &LifecycleImpl,
                 ) -> Result<Vec<Effect>, ProcessingError> {
+                    let app_state = &lifecycle.app_state;
+                    let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
-                        Cqrs::MyGoodDomainModelAddItem(item) => MyGoodDomainModel::add_item(app_state, item),
-                        Cqrs::MyGoodDomainModelRemoveItem(todo_pos) => MyGoodDomainModel::remove_item(app_state, todo_pos),
-                        Cqrs::MyGoodDomainModelCleanList => MyGoodDomainModel::clean_list(app_state),
-                        Cqrs::MyGoodDomainModelGetAllItems => MyGoodDomainModel::get_all_items(app_state),
+                        MyGoodDomainModelQuery::GetAllItems => my_good_domain_model_lock.get_all_items(),
                     }
-                    .map_err(ProcessingError::MyGoodProcessingError)?
+                    .map_err(ProcessingError::MyGoodProcessingError)?;
+                    Ok(result
                     .into_iter()
                     .map(|effect| match effect {
                         MyGoodDomainModelEffect::RenderItems(rust_auto_opaque_my_good_domain_model) =>
                             Effect::MyGoodDomainModelRenderItems(rust_auto_opaque_my_good_domain_model) ,
                     })
-                    .collect();
-                    Ok(result)
+                    .collect())
                 }
-                pub fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let app_state = &Lifecycle::get().app_state;
-                    let result = self.process_with_app_state(app_state)?;
-                    let _ = app_state.persist().map_err(ProcessingError::NotPersisted);
-                    Ok(result)
+            }
+            impl Cqrs for MyGoodDomainModelCommand {
+                fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                    self.process_with_lifecycle(LifecycleImpl::get())
+                }
+            }
+            impl MyGoodDomainModelCommand {
+                fn process_with_lifecycle(
+                    self,
+                    lifecycle: &LifecycleImpl,
+                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let app_state = &lifecycle.app_state;
+                    let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
+                    let (state_changed, result) = match self {
+                        MyGoodDomainModelCommand::AddItem(item) => my_good_domain_model_lock.add_item(item),
+                        MyGoodDomainModelCommand::CleanList => my_good_domain_model_lock.clean_list(),
+                        MyGoodDomainModelCommand::RemoveItem(todo_pos) =>
+                            my_good_domain_model_lock.remove_item(todo_pos),
+                    }
+                    .map_err(ProcessingError::MyGoodProcessingError)?;
+                    if state_changed {
+                        app_state.mark_dirty();
+                        lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                    }
+                    Ok(result
+                        .into_iter()
+                        .map(|effect| match effect {
+                            MyGoodDomainModelEffect::RenderItems(rust_auto_opaque_my_good_domain_model) =>
+                                Effect::MyGoodDomainModelRenderItems(rust_auto_opaque_my_good_domain_model),
+                        })
+                        .collect())
                 }
             }
         };
