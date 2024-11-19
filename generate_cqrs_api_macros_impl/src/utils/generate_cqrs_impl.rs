@@ -437,12 +437,9 @@ mod tests {
     use quote::{format_ident, quote};
     use syn::parse_str;
 
-    use crate::utils::{
-        generate_cqrs_impl::{
-            generate_cqrs_command_enum, generate_cqrs_functions, generate_cqrs_query_enum,
-            get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes, get_cqrs_functions,
-        },
-        get_domain_model_struct::{self, get_domain_model_struct_ident},
+    use crate::utils::generate_cqrs_impl::{
+        generate_cqrs_command_enum, generate_cqrs_functions, generate_cqrs_query_enum,
+        get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes, get_cqrs_functions,
     };
 
     const CODE: &str = r#"
@@ -742,19 +739,6 @@ mod tests {
             .into_pairs()
             .map(|pair| pair.value().clone())
             .collect();
-        let cqrs_query_enum = quote! {
-            pub enum MyGoodDomainModelQuery{
-                AllItems,
-                QueryGetItem(item_pos)
-            }
-        };
-        let cqrs_command_enum = quote! {
-            pub enum MyGoodDomainModelCommand{
-                AddItem(item, priority),
-                RemoveItem(item_pos),
-                CleanList
-            }
-        };
         let cqrs_queries = generate_cqrs_functions(
             "Query",
             &domain_model_struct_ident,
