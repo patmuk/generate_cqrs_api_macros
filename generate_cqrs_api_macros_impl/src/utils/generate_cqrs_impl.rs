@@ -40,6 +40,7 @@ pub(crate) fn generate_cqrs_impl(
         &cqrs_queries_sig_idents,
         effect,
         effect_variants,
+        processing_error,
     );
     let generated_cqrs_commands = generate_cqrs_functions(
         "Command",
@@ -47,6 +48,7 @@ pub(crate) fn generate_cqrs_impl(
         &cqrs_commands_sig_idents,
         effect,
         effect_variants,
+        processing_error,
     );
 
     quote! {
@@ -63,6 +65,7 @@ fn generate_cqrs_functions(
     cqrs_queries_sig_idents: &[(Ident, Vec<Ident>)],
     effect: &Ident,
     effect_variants: &[Variant],
+    processing_error: &Ident,
 ) -> TokenStream {
     let enum_ident = format_ident!("{}{}", domain_model_struct_ident, cqrs_kind);
     let process_trait_impl = quote! {
@@ -93,8 +96,6 @@ fn generate_cqrs_functions(
             #domain_model_lock. #fn_call ( #(#args),*)
         }
     });
-
-    let processing_error = format_ident!("{}ProcessingError", domain_model_struct_ident);
 
     let effects_match_statements = effect_variants.iter().map(|variant| {
         // use the type as the ident, as enum variant payloads don't have a name
@@ -760,6 +761,7 @@ mod tests {
             &get_cqrs_fns_sig_idents(&cqrs_q),
             &effect_ident,
             &effect_variants,
+            &processing_error,
         );
         let cqrs_commands = generate_cqrs_functions(
             "Command",
@@ -767,6 +769,7 @@ mod tests {
             &get_cqrs_fns_sig_idents(&cqrs_c),
             &effect_ident,
             &effect_variants,
+            &processing_error,
         );
         let result = quote! {
            #cqrs_queries
@@ -789,7 +792,7 @@ mod tests {
                     let result = match self {
                         MyGoodDomainModelQuery::AllItems => my_good_domain_model_lock.all_items(),
                         MyGoodDomainModelQuery::QueryGetItem(item_pos) => my_good_domain_model_lock.query_get_item(item_pos),
-                    }.map_err(ProcessingError::MyGoodDomainModelProcessingError)?;
+                    }.map_err(ProcessingError::MyGoodProcessingError)?;
                     Ok(result
                         .into_iter()
                         .map(|effect| match effect {
@@ -820,7 +823,7 @@ mod tests {
                         MyGoodDomainModelCommand::CommandCleanList => my_good_domain_model_lock.command_clean_list(),
                         MyGoodDomainModelCommand::RemoveItem(item_pos) => my_good_domain_model_lock.remove_item(item_pos) ,
                     }
-                    .map_err(ProcessingError::MyGoodDomainModelProcessingError)?;
+                    .map_err(ProcessingError::MyGoodProcessingError)?;
                     if state_changed {
                         app_state.mark_dirty();
                         lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
