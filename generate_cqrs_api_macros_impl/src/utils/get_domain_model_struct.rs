@@ -8,7 +8,6 @@ pub(crate) fn get_domain_model_struct_ident(ast: &File) -> Result<Ident> {
         .items
         .iter()
         .filter_map(|item| match item {
-            // syn::Item::Impl(item_impl)
             syn::Item::Impl(item_impl)
                 if item_impl.trait_.is_some()
                     && item_impl
@@ -89,7 +88,6 @@ mod tests {
             + DEFAULT_CODE;
         let ast = syn::parse_file(&input).expect("test oracle should be parsable");
         let result = get_domain_model_struct_ident(&ast);
-        // assert_eq!("aha", result.to_string());
         assert_eq!(
             "No domain model struct found. Mark it with the trait CqrsModel.",
             result.unwrap_err().to_string()

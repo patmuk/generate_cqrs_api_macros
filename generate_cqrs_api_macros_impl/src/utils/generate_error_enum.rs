@@ -73,8 +73,6 @@ mod tests {
             },
         );
 
-        // let result = AST.with(|ast| generate_error_enum("", &ast));
-
         assert_eq!(expected.0.to_string(), result.0.to_string());
         assert_eq!(expected.1.to_string(), result.1.to_string());
     }
@@ -155,8 +153,6 @@ mod tests {
                 }
             },
         );
-
-        // let result = AST.with(|ast| generate_error_enum("", &ast));
 
         assert_eq!(expected.0.to_string(), result.0.to_string());
         assert_eq!(expected.1.to_string(), result.1.to_string());

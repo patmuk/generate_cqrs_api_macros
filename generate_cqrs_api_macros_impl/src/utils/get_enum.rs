@@ -135,8 +135,6 @@ mod tests {
             }
         };
 
-        // let result = AST.with(|ast| generate_error_enum("", &ast));
-
         assert_eq!(expected.to_string(), result.to_string());
     }
     #[test]
@@ -166,8 +164,6 @@ mod tests {
                 NotPersisted(#[source] std::io::Error),
             }
         };
-
-        // let result = AST.with(|ast| generate_error_enum("", &ast));
 
         assert_eq!(expected.to_string(), result.to_string());
     }

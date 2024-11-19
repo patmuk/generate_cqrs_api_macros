@@ -225,7 +225,6 @@ fn generate_cqrs_enum_variants(cqrs_fns_sig_tipes: &[(Ident, Vec<Ident>)]) -> Ve
 /// extracts the signature of passed functions,
 /// returning the types of the arguments
 /// e.g.: foo(name: String, age: usize) => [foo [String, usize]]
-// fn get_cqrs_fns_sig_tipes(cqrs_fns_sig: &[(Ident, Vec<PatType>)]) -> Vec<(Ident, Vec<Ident>)> {
 fn get_cqrs_fns_sig_tipes(cqrs_fns: &[ImplItemFn]) -> Vec<(Ident, Vec<Ident>)> {
     cqrs_fns
         .iter()
@@ -255,14 +254,10 @@ fn get_cqrs_fns_sig_idents(cqrs_fns: &[ImplItemFn]) -> Vec<(Ident, Vec<Ident>)> 
                 .inputs
                 .iter()
                 .filter_map(|arg| match arg {
-                    syn::FnArg::Typed(pat_type) => {
-                        match *pat_type.pat.clone() {
-                            syn::Pat::Ident(pat_ident) => Some(pat_ident.ident),
-                            // syn::Pat::Path(expr_path) => todo!(),
-                            // syn::Pat::Type(pat_type) => todo!(),
-                            _ => None,
-                        }
-                    }
+                    syn::FnArg::Typed(pat_type) => match *pat_type.pat.clone() {
+                        syn::Pat::Ident(pat_ident) => Some(pat_ident.ident),
+                        _ => None,
+                    },
                     syn::FnArg::Receiver(_) => None,
                 })
                 .collect::<Vec<Ident>>();

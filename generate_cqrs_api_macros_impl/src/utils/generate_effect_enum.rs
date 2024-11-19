@@ -71,8 +71,6 @@ mod tests {
             },
         );
 
-        // let result = AST.with(|ast| generate_effect_enum("", &ast));
-
         assert_eq!(expected.0.to_string(), result.0.to_string());
         // assert_eq!(expected.1, result.1); // if all other tests are ok, this intermediate result must be ok as well
         assert_eq!(expected.2.to_string(), result.2.to_string());

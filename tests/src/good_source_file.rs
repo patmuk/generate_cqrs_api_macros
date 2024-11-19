@@ -2,17 +2,11 @@ use crate::mocks::app_state_mock;
 use crate::mocks::cqrs_traits_mock;
 use crate::mocks::rust_auto_opaque_mock;
 
-// include!("mocks/app_state_mock.rs");
-// include!("mocks/cqrs_traits_mock.rs");
-// include!("mocks/rust_auto_opaque_mock.rs");
-
 #[derive(Clone, Debug, Default, PartialEq)]
-// #[frb(opaque)]
 pub struct MyGoodDomainModel {
     items: Vec<DomainItem>,
 }
 
-// #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[derive(Clone, Debug, PartialEq)]
 struct DomainItem {
     text: String,
