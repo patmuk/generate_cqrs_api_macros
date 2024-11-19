@@ -3,6 +3,7 @@ use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
 use stringcase::pascal_case_with_sep;
+use stringcase::snake_case_with_sep;
 use syn::Fields;
 use syn::File;
 use syn::Ident;
@@ -33,18 +34,21 @@ pub(crate) fn generate_cqrs_impl(
     let generated_cqrs_command_enum =
         generate_cqrs_command_enum(&cqrs_commands_sig_tipes, domain_model_struct_ident);
 
-    let generated_cqrs_queries = generate_cqrs_queries(
+    let generated_cqrs_queries = generate_cqrs_functions(
+        "Query",
+        domain_model_struct_ident,
         &cqrs_queries_sig_idents,
-        domain_model_struct_ident,
         effect,
         effect_variants,
     );
-    let generated_cqrs_commands = generate_cqrs_commands(
+    let generated_cqrs_commands = generate_cqrs_functions(
+        "Command",
+        domain_model_struct_ident,
         &cqrs_commands_sig_idents,
-        domain_model_struct_ident,
         effect,
         effect_variants,
     );
+
     quote! {
         #generated_cqrs_query_enum
         #generated_cqrs_command_enum
@@ -53,42 +57,45 @@ pub(crate) fn generate_cqrs_impl(
     }
 }
 
-fn generate_cqrs_queries(
-    cqrs_queries_sig_idents: &[(Ident, Vec<Ident>)],
+fn generate_cqrs_functions(
+    cqrs_kind: &str,
     domain_model_struct_ident: &Ident,
+    cqrs_queries_sig_idents: &[(Ident, Vec<Ident>)],
     effect: &Ident,
     effect_variants: &[Variant],
 ) -> TokenStream {
-    let cqrs_queries = cqrs_queries_sig_idents.iter().map(|(ident, args)| {
-        let fn_ident = format_ident!(
-            "{}{}",
-            domain_model_struct_ident,
-            pascal_case_with_sep(&ident.to_string(), "_")
-        );
-
-        //remove '&self' from the lhs arguments
-        let lhs_args =
-        if args[0] == "& self" {
-            args[1..].to_vec()
-        } else {
-            panic!("'impl MyModelLock {{' functions have to have '& self' as the first argument! Found {} instead.",args[0]);
-        };
-
-        let lhs = if lhs_args.is_empty() {
-            quote! {Cqrs::#fn_ident}
-        } else {
-            quote! {
-                Cqrs::#fn_ident (#(#lhs_args), *)
+    let enum_ident = format_ident!("{}{}", domain_model_struct_ident, cqrs_kind);
+    let process_trait_impl = quote! {
+        impl Cqrs for #enum_ident {
+            fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                self.process_with_lifecycle(LifecycleImpl::get())
             }
-        };
-        (lhs, args, ident)
-    });
+        }
+    };
+    // hardcoded ... could be improved using traits
+    let domain_model_lock = format_ident!(
+        "{}_lock",
+        snake_case_with_sep(&domain_model_struct_ident.to_string(), "_")
+    );
 
-    let match_statement = cqrs_queries.map(|(lhs, args, rhs_ident)| {
+    let lhs_cqrs_call = {
+        let enum_variants = generate_cqrs_enum_variants(cqrs_queries_sig_idents);
+        enum_variants.into_iter().map(|variant| {
+            quote! {
+                #enum_ident::#variant
+            }
+        })
+    };
+
+    let rhs_cqrs_call = cqrs_queries_sig_idents.iter().map(|(ident, args)| {
+        let fn_call = format_ident!("{}", snake_case_with_sep(&ident.to_string(), "_"));
         quote! {
-            #lhs => #domain_model_struct_ident::#rhs_ident(#(#args),*),
+            #domain_model_lock. #fn_call ( #(#args),*)
         }
     });
+
+    let processing_error = format_ident!("{}ProcessingError", domain_model_struct_ident);
+
     let effects_match_statements = effect_variants.iter().map(|variant| {
         // use the type as the ident, as enum variant payloads don't have a name
         let variant_fields_idents = match &variant.fields {
@@ -125,76 +132,48 @@ fn generate_cqrs_queries(
         }
     });
 
-    quote! {
-        impl TodoQuery {
-            fn process_with_lifecycle(
-                self,
-                lifecycle: &LifecycleImpl,
-            ) -> Result<Vec<Effect>, ProcessingError> {
-                let todo_list_model_lock = &lifecycle.app_state.todo_list_model_lock;
-                let result = match self {
-                    TodoQuery::AllTodos => todo_list_model_lock.query_get_all_todos(),
-                    TodoQuery::GetTodo(todo_pos) => todo_list_model_lock.query_get_todo(todo_pos),
-                }
-                .map_err(ProcessingError::TodoListProcessingError)?;
-                Ok(result
-                    .into_iter()
-                    .map(|effect| match effect {
-                        TodoListEffect::RenderTodoList(model_lock) => {
-                        Effect::TodoListEffectRenderTodoList(model_lock)
-                    }
-                        TodoListEffect::RenderTodoItem(todo_item) => {
-                        Effect::TodoListEffectRenderTodoItem(todo_item)
-                    }
-                })
-                .collect())
-           }
+    let update_state_statement = if cqrs_kind == "Command" {
+        quote! {
+            if state_changed {
+                app_state.mark_dirty();
+                lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+            }
         }
-        impl TodoCommand {
+    } else {
+        quote! {}
+    };
+
+    let result_type = if cqrs_kind == "Command" {
+        quote! {(state_changed, result)}
+    } else {
+        quote! {result}
+    };
+
+    // generate final code
+    quote! {
+        #process_trait_impl
+
+        impl #enum_ident{
             fn process_with_lifecycle(
                 self,
                 lifecycle: &LifecycleImpl,
             ) -> Result<Vec<Effect>, ProcessingError> {
                 let app_state = &lifecycle.app_state;
-                let todo_list_model_lock = &app_state.todo_list_model_lock;
-                let (state_changed, result) = match self {
-                    TodoCommand::AddTodo(todo) => todo_list_model_lock.command_add_todo(todo),
-                    TodoCommand::RemoveTodo(todo_pos) => todo_list_model_lock.command_remove_todo(todo_pos),
-                    TodoCommand::CleanList => todo_list_model_lock.command_clean_list(),
+                let #domain_model_lock = &app_state.#domain_model_lock;
+                let #result_type = match self {
+                    #(#lhs_cqrs_call => #rhs_cqrs_call,)*
                 }
-                .map_err(ProcessingError::TodoListProcessingError)?;
-                if state_changed {
-                    app_state.mark_dirty();
-                    lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
-                }
-                Ok(result
-                    .into_iter()
-                    .map(|effect| match effect {
-                        TodoListEffect::RenderTodoList(model_lock) => {
-                            Effect::TodoListEffectRenderTodoList(model_lock)
-                        }
-                        TodoListEffect::RenderTodoItem(todo_item) => {
-                            Effect::TodoListEffectRenderTodoItem(todo_item)
-                        }
-                    })
+                .map_err(ProcessingError::#processing_error)?;
+            #update_state_statement
+            Ok(result
+                .into_iter()
+                .map(|effect| match effect {
+                    #(#effects_match_statements)*
+                })
                 .collect())
             }
         }
     }
-}
-
-fn generate_cqrs_commands(
-    cqrs_queries_sig_idents: &[(Ident, Vec<Ident>)],
-    domain_model_struct_ident: &Ident,
-    effect: &Ident,
-    effect_variants: &[Variant],
-) -> TokenStream {
-    generate_cqrs_queries(
-        cqrs_queries_sig_idents,
-        domain_model_struct_ident,
-        effect,
-        effect_variants,
-    )
 }
 
 fn generate_cqrs_query_enum(
@@ -210,22 +189,12 @@ fn generate_cqrs_command_enum(
     generate_cqrs_enum(cqrs_q_fns_sig_tipes, "Command", domain_model_struct_ident)
 }
 fn generate_cqrs_enum(
-    cqrs_fns_sig_tipes: &[(Ident, Vec<Ident>)],
-    cqrs_type: &str,
+    cqrs_q_fns_sig_tipes: &[(Ident, Vec<Ident>)],
+    cqrs_kind: &str,
     domain_model_struct_ident: &Ident,
 ) -> TokenStream {
-    let cqrs_ident = format_ident!("{domain_model_struct_ident}{cqrs_type}");
-    let enum_variants = cqrs_fns_sig_tipes.iter().map(|(ident, args)| {
-        let enum_variant = format_ident!("{}", pascal_case_with_sep(&ident.to_string(), "_"));
-        if args.is_empty() {
-            quote! {#enum_variant}
-        } else {
-            quote! {
-                #enum_variant (#(#args),*)
-            }
-        }
-    });
-
+    let enum_variants = generate_cqrs_enum_variants(cqrs_q_fns_sig_tipes);
+    let cqrs_ident = format_ident!("{domain_model_struct_ident}{cqrs_kind}");
     let code = quote! {
         pub enum #cqrs_ident {
             #(#enum_variants),*
@@ -234,6 +203,22 @@ fn generate_cqrs_enum(
 
     debug!("\n\n{:#?}\n\n", code);
     code
+}
+
+fn generate_cqrs_enum_variants(cqrs_fns_sig_tipes: &[(Ident, Vec<Ident>)]) -> Vec<TokenStream> {
+    cqrs_fns_sig_tipes
+        .iter()
+        .map(|(ident, args)| {
+            let enum_variant = format_ident!("{}", pascal_case_with_sep(&ident.to_string(), "_"));
+            if args.is_empty() {
+                quote! {#enum_variant}
+            } else {
+                quote! {
+                    #enum_variant (#(#args),*)
+                }
+            }
+        })
+        .collect::<Vec<TokenStream>>()
 }
 
 /// extracts the signature of passed functions,
@@ -293,7 +278,7 @@ fn get_cqrs_functions(
     ast: &File,
 ) -> (Vec<ImplItemFn>, Vec<ImplItemFn>) {
     let domain_model_lock_struct_ident = format_ident!("{domain_model_struct_ident}Lock");
-    let cqrs_fns = ast
+    let mut cqrs_fns = ast
         .items
         .iter()
         .filter_map(|item| {
@@ -395,6 +380,13 @@ fn get_cqrs_functions(
                 _ => acc,
             }
         });
+    // sort the retrieved functions bu function name (=ident)
+    cqrs_fns
+        .0
+        .sort_by_key(|function| function.sig.ident.clone());
+    cqrs_fns
+        .1
+        .sort_by_key(|function| function.sig.ident.clone());
     if cqrs_fns.0.is_empty() && cqrs_fns.1.is_empty() {
         panic!(
             r#"Did not find a single cqrs-function! Be sure to implement them like:
@@ -446,9 +438,8 @@ mod tests {
 
     use crate::utils::{
         generate_cqrs_impl::{
-            generate_cqrs_command_enum, generate_cqrs_commands, generate_cqrs_queries,
-            generate_cqrs_query_enum, get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes,
-            get_cqrs_functions,
+            generate_cqrs_command_enum, generate_cqrs_functions, generate_cqrs_query_enum,
+            get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes, get_cqrs_functions,
         },
         get_domain_model_struct::{self, get_domain_model_struct_ident},
     };
@@ -559,7 +550,7 @@ mod tests {
                     self.lock.blocking_write().items.clear();
                     Ok((true, vec![MyGoodDomainModelEffect::RenderItems(self.clone())]))
                 }
-                pub(crate) fn get_all_items(
+                pub(crate) fn all_items(
                     &self,
                 ) -> Result<Vec<MyGoodDomainModelEffect>, MyGoodProcessingError> {
                     Ok(vec![MyGoodDomainModelEffect::RenderItems(self.clone())])
@@ -594,7 +585,7 @@ mod tests {
         };
 
         let expected = quote! {
-            pub (crate) fn get_all_items (&self ,) -> Result <  Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > {
+            pub (crate) fn all_items (&self ,) -> Result <  Vec < MyGoodDomainModelEffect > , MyGoodProcessingError > {
                 Ok(vec![MyGoodDomainModelEffect::RenderItems(self.clone())])
             }
             pub(crate) fn query_get_item(
@@ -607,18 +598,6 @@ mod tests {
                 } else {
                     let item = &items[item_pos - 1];
                     Ok(vec![MyGoodDomainModelEffect::RenderItems(item.clone())])
-                }
-            }
-            pub(crate) fn remove_item(
-                &self,
-                item_pos: usize,
-            ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
-                let items = &mut self.lock.blocking_write().items;
-                if item_pos > items.len() {
-                    Err(MyGoodProcessingError::ItemDoesNotExist(item_pos))
-                } else {
-                    items.remove(item_pos - 1);
-                    Ok( true, vec![MyGoodDomainModelEffect::RenderItems(model_lock.clone())] )
                 }
             }
             pub(crate) fn add_item(
@@ -634,6 +613,18 @@ mod tests {
             ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
                 self.lock.blocking_write().items.clear();
                 Ok((true, vec![MyGoodDomainModelEffect::RenderItems(self.clone())]))
+            }
+            pub(crate) fn remove_item(
+                &self,
+                item_pos: usize,
+            ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                let items = &mut self.lock.blocking_write().items;
+                if item_pos > items.len() {
+                    Err(MyGoodProcessingError::ItemDoesNotExist(item_pos))
+                } else {
+                    items.remove(item_pos - 1);
+                    Ok( true, vec![MyGoodDomainModelEffect::RenderItems(model_lock.clone())] )
+                }
             }
         };
         assert_eq!(expected.to_string(), result.to_string());
@@ -672,11 +663,11 @@ mod tests {
         );
         assert_eq!(
             vec![
-                "get_all_items",
+                "all_items",
                 "query_get_item",
-                "remove_item",
                 "add_item",
-                "command_clean_list"
+                "command_clean_list",
+                "remove_item"
             ],
             result
                 .0
@@ -711,13 +702,13 @@ mod tests {
 
         let expected = quote! {
             pub enum MyGoodDomainModelQuery {
-                GetAllItems,
+                AllItems,
                 QueryGetItem(usize)
             }
             pub enum MyGoodDomainModelCommand  {
-                RemoveItem(usize),
                 AddItem(String, usize),
-                CommandCleanList
+                CommandCleanList,
+                RemoveItem(usize)
             }
         };
 
@@ -750,15 +741,30 @@ mod tests {
             .into_pairs()
             .map(|pair| pair.value().clone())
             .collect();
-        let cqrs_queries = generate_cqrs_queries(
-            &get_cqrs_fns_sig_idents(&cqrs_q),
+        let cqrs_query_enum = quote! {
+            pub enum MyGoodDomainModelQuery{
+                AllItems,
+                QueryGetItem(item_pos)
+            }
+        };
+        let cqrs_command_enum = quote! {
+            pub enum MyGoodDomainModelCommand{
+                AddItem(item, priority),
+                RemoveItem(item_pos),
+                CleanList
+            }
+        };
+        let cqrs_queries = generate_cqrs_functions(
+            "Query",
             &domain_model_struct_ident,
+            &get_cqrs_fns_sig_idents(&cqrs_q),
             &effect_ident,
             &effect_variants,
         );
-        let cqrs_commands = generate_cqrs_commands(
-            &get_cqrs_fns_sig_idents(&cqrs_c),
+        let cqrs_commands = generate_cqrs_functions(
+            "Command",
             &domain_model_struct_ident,
+            &get_cqrs_fns_sig_idents(&cqrs_c),
             &effect_ident,
             &effect_variants,
         );
@@ -768,53 +774,53 @@ mod tests {
         };
 
         let expected = quote! {
-                impl Cqrs for MyGoodDomainModelCommand {
-                    fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                        let lifecycle = LifecycleImpl::get();
-                        self.process_with_lifecycle(lifecycle)
-                    }
+            impl Cqrs for MyGoodDomainModelQuery {
+                fn process (self) -> Result < Vec < Effect > , ProcessingError > {
+                    self.process_with_lifecycle(LifecycleImpl::get())
                 }
-                impl Cqrs for MyGoodDomainModelQuery {
-                    fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                        self.process_with_lifecycle(LifecycleImpl::get())
-                    }
-                }
-                impl MyGoodDomainModelQuery {
-                    fn process_with_lifecycle(
-                       self,
-                       lifecycle: &LifecycleImpl,
-                    ) -> Result<Vec<Effect>, ProcessingError> {
-                        let my_good_domain_model_lock = &lifecycle.app_state.my_good_domain_model_lock;
-                        let result = match self {
-                            MyGoodDomainModelQuery::AllItems => my_good_domain_model_lock.get_all_items(),
-                            MyGoodDomainModelQuery::QueryGetItem(item_pos) => my_good_domain_model_lock.query_get_item(item_pos),
-                        }.map_err(ProcessingError::MyGoodDomainModelProcessingError)?;
-                        Ok(result
+            }
+            impl MyGoodDomainModelQuery {
+                fn process_with_lifecycle(
+                    self,
+                    lifecycle: &LifecycleImpl,
+                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let app_state = &lifecycle.app_state;
+                    let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
+                    let result = match self {
+                        MyGoodDomainModelQuery::AllItems => my_good_domain_model_lock.all_items(),
+                        MyGoodDomainModelQuery::QueryGetItem(item_pos) => my_good_domain_model_lock.query_get_item(item_pos),
+                    }.map_err(ProcessingError::MyGoodDomainModelProcessingError)?;
+                    Ok(result
                         .into_iter()
                         .map(|effect| match effect {
-                            MyGoodDomainModelEffect::RenderItemList(model_lock) => {
-                                Effect::MyGoodDomainModelEffectRenderItemList(model_lock)
-                            }
-                            MyGoodDomainModelEffect::RenderItemItem(item_item) => {
-                                Effect::MyGoodDomainModelEffectRenderItemItem(item_item)
-                            }
-                        })
+                            MyGoodDomainModelEffect::RenderItemList(model_lock) =>
+                                Effect::MyGoodDomainModelRenderItemList(model_lock),
+                            MyGoodDomainModelEffect::RenderItem(item) =>
+                                Effect::MyGoodDomainModelRenderItem(item),
+                            MyGoodDomainModelEffect::RenderMyGoodDomainModel(model_lock) =>
+                                Effect::MyGoodDomainModelRenderMyGoodDomainModel(model_lock)
+                        , })
                         .collect())
                     }
                 }
-                impl MyGoodDomainModelCommand {
-                    fn process_with_lifecycle(
+            impl Cqrs for MyGoodDomainModelCommand {
+                fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                    self.process_with_lifecycle(LifecycleImpl::get())
+                }
+            }
+            impl MyGoodDomainModelCommand {
+                fn process_with_lifecycle(
                     self,
                     lifecycle: &LifecycleImpl,
-                    ) -> Result<Vec<Effect>, ProcessingError> {
-                        let app_state = &lifecycle.app_state;
-                        let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
-                        let (state_changed, result) = match self {
-                            MyGoodDomainModelCommand::AddItem(item, priority) => my_good_domain_model_lock.add_item(item, priority),
-                            MyGoodDomainModelCommand::RemoveItem(item_pos) => my_good_domain_model_lock.remove_item(item_pos),
-                            MyGoodDomainModelCommand::CleanList => my_good_domain_model_lock.command_clean_list(),
-                        }
-                        .map_err(ProcessingError::MyGoodDomainModelProcessingError)?;
+                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let app_state = &lifecycle.app_state;
+                    let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
+                    let (state_changed, result) = match self {
+                        MyGoodDomainModelCommand::AddItem(item, priority) => my_good_domain_model_lock.add_item(item, priority),
+                        MyGoodDomainModelCommand::CommandCleanList => my_good_domain_model_lock.command_clean_list(),
+                        MyGoodDomainModelCommand::RemoveItem(item_pos) => my_good_domain_model_lock.remove_item(item_pos) ,
+                    }
+                    .map_err(ProcessingError::MyGoodDomainModelProcessingError)?;
                     if state_changed {
                         app_state.mark_dirty();
                         lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
@@ -822,13 +828,11 @@ mod tests {
                     Ok(result
                     .into_iter()
                     .map(|effect| match effect {
-                        MyGoodDomainModelEffect::RenderMyGoodDomainModel(model_lock) => {
-                            Effect::MyGoodDomainModelEffectRenderMyGoodDomainModel(model_lock)
-                        }
-                        MyGoodDomainModelEffect::RenderItem(item) => {
-                            Effect::MyGoodDomainModelEffectRenderItem(item)
-                        }
-                    })
+                        MyGoodDomainModelEffect::RenderItemList(model_lock) =>
+                        Effect::MyGoodDomainModelRenderItemList(model_lock),
+                        MyGoodDomainModelEffect::RenderItem(item) => Effect::MyGoodDomainModelRenderItem(item),
+                        MyGoodDomainModelEffect::RenderMyGoodDomainModel(model_lock) => Effect::MyGoodDomainModelRenderMyGoodDomainModel(model_lock)
+                    , })
                     .collect())
                 }
             }
