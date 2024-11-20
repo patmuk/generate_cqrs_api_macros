@@ -197,6 +197,7 @@ fn generate_cqrs_enum(
     let enum_variants = generate_cqrs_enum_variants(cqrs_q_fns_sig_tipes);
     let cqrs_ident = format_ident!("{domain_model_struct_ident}{cqrs_kind}");
     let code = quote! {
+        #[derive(Debug)]
         pub enum #cqrs_ident {
             #(#enum_variants),*
         }
@@ -694,10 +695,12 @@ mod tests {
         };
 
         let expected = quote! {
+            #[derive(Debug)]
             pub enum MyGoodDomainModelQuery {
                 AllItems,
                 QueryGetItem(usize)
             }
+            #[derive(Debug)]
             pub enum MyGoodDomainModelCommand  {
                 AddItem(String, usize),
                 CommandCleanList,

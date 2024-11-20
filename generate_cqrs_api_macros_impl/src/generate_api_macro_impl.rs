@@ -9,17 +9,33 @@ use crate::utils::get_use_statements::get_use_statements;
 use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Result;
+use syn::{parse2, Result};
 
 pub(crate) struct BasePath(pub(crate) String);
 pub(crate) struct SourceCode(pub(crate) String);
 
-pub fn generate_api_impl(file_pathes: TokenStream) -> Result<TokenStream> {
-    simple_logger::init_with_level(log::Level::Debug).expect("faild to init logger");
-
+pub fn generate_api_impl(
+    item_struct: TokenStream,
+    file_pathes: TokenStream,
+) -> Result<TokenStream> {
     log::info!("-------- Generating API --------");
+    let lifecycle_impl = parse2::<syn::ItemImpl>(item_struct)
+        .expect("This macro has to be declaired on an 'impl api_traits::Lifecycle'!");
+    // check if it implements the Lifecycle trait
+    if lifecycle_impl
+        .trait_
+        .expect("Needs to implement the Lifecycle trait!")
+        .1
+        .get_ident()
+        .is_some_and(|ident| ident != "Lifecycle")
+    {
+        panic!("The macro has to be declaired on an 'impl api_traits::Lifecycle'!");
+    }
 
     let file_locations = tokens_2_file_locations(file_pathes)?;
+    if file_locations.is_empty() {
+        panic!("At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]");
+    }
     let (base_path, file_content) = read_rust_file_content(&file_locations[0])?;
 
     let generated_code = generate_code(base_path, file_content)?;
@@ -48,6 +64,7 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
     );
 
     let generated_code = quote! {
+        use crate::utils::cqrs_traits::Cqrs;
         #base_use_statement
         #(#use_statements)*
         #generated_error_enum
@@ -68,6 +85,8 @@ mod tests {
     };
     use quote::quote;
 
+    use super::generate_api_impl;
+
     // use syn::{
     //     parse::{Parse, Parser},
     //     parse_str, File,
@@ -80,11 +99,12 @@ mod tests {
     #[test]
     fn generate_all_from_good_file_test() {
         let expected = quote! {
-            use crate::good_source_file::*;
-            use crate::mocks::app_state_mock;
-            use crate::mocks::cqrs_traits_mock;
-            use crate::mocks::rust_auto_opaque_mock;
-            use crate::good_source_file::MyGoodProcessingError;
+            use crate :: utils :: cqrs_traits :: Cqrs ;
+            use crate :: good_source_file :: * ;
+            use crate :: mocks :: app_state_mock ;
+            use crate :: mocks :: cqrs_traits_mock ;
+            use crate :: mocks :: rust_auto_opaque_mock ;
+            use crate :: good_source_file :: MyGoodProcessingError ;
 
             #[derive(thiserror :: Error, Debug)]
             pub enum ProcessingError {
@@ -96,9 +116,11 @@ mod tests {
             pub enum Effect {
                 MyGoodDomainModelRenderItems(RustAutoOpaque<MyGoodDomainModel>)
             }
+            #[derive(Debug)]
             pub enum MyGoodDomainModelQuery {
                 GetAllItems
             }
+            #[derive(Debug)]
             pub enum MyGoodDomainModelCommand {
                 AddItem(String),
                 CleanList,
@@ -168,5 +190,24 @@ mod tests {
 
         let result = generate_code(base_path, content).unwrap();
         assert_eq!(expected.to_string(), result.to_string());
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]"
+    )]
+    fn test_gengenerate_api_impl_no_model_struct() {
+        let lifecycle_struct = quote! {
+            impl api_traits::Lifecycle for Lifecycle {}
+        };
+        let _ = generate_api_impl(lifecycle_struct, quote! {});
+    }
+    #[test]
+    #[should_panic(expected = "Needs to implement the Lifecycle trait!")]
+    fn test_gengenerate_api_impl_wrong_lifecycle_impl() {
+        let lifecycle_not_trait_impl = quote! {
+            impl Lifecycle {}
+        };
+        let _ = generate_api_impl(lifecycle_not_trait_impl, quote! {});
     }
 }
