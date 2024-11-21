@@ -9,27 +9,18 @@ use crate::utils::get_use_statements::get_use_statements;
 use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, Result};
+use syn::Result;
 
 pub(crate) struct BasePath(pub(crate) String);
 pub(crate) struct SourceCode(pub(crate) String);
 
-pub fn generate_api_impl(
-    item_struct: TokenStream,
-    file_pathes: TokenStream,
-) -> Result<TokenStream> {
+pub fn generate_api_impl(item: TokenStream, file_pathes: TokenStream) -> Result<TokenStream> {
     log::info!("-------- Generating API --------");
-    let lifecycle_impl = parse2::<syn::ItemImpl>(item_struct)
-        .expect("This macro has to be declaired on an 'impl api_traits::Lifecycle'!");
     // check if it implements the Lifecycle trait
-    if lifecycle_impl
-        .trait_
-        .expect("Needs to implement the Lifecycle trait!")
-        .1
-        .get_ident()
-        .is_some_and(|ident| ident != "Lifecycle")
-    {
-        panic!("The macro has to be declaired on an 'impl api_traits::Lifecycle'!");
+    // not parsing with syn::parse, to save time. Returning the unchanged input anyways, would need to clone() otherwise
+    println!("item: {:?}", item.to_string());
+    if !item.to_string().contains("Lifecycle for ") {
+        panic!("The macro has to be declaired on an 'impl api_traits::Lifecycle for'!");
     }
 
     let file_locations = tokens_2_file_locations(file_pathes)?;
@@ -39,7 +30,12 @@ pub fn generate_api_impl(
     let (base_path, file_content) = read_rust_file_content(&file_locations[0])?;
 
     let generated_code = generate_code(base_path, file_content)?;
-    Ok(generated_code)
+
+    let output = quote! {
+        #item
+        #generated_code
+    };
+    Ok(output)
 }
 
 fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenStream> {
@@ -129,7 +125,7 @@ mod tests {
 
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get())
+                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
                 }
             }
             impl MyGoodDomainModelQuery {
@@ -154,7 +150,7 @@ mod tests {
             }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get())
+                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
                 }
             }
             impl MyGoodDomainModelCommand {
@@ -197,13 +193,15 @@ mod tests {
         expected = "At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]"
     )]
     fn test_gengenerate_api_impl_no_model_struct() {
-        let lifecycle_struct = quote! {
+        let lifecycle_impl = quote! {
             impl api_traits::Lifecycle for Lifecycle {}
         };
-        let _ = generate_api_impl(lifecycle_struct, quote! {});
+        let _ = generate_api_impl(lifecycle_impl, quote! {});
     }
     #[test]
-    #[should_panic(expected = "Needs to implement the Lifecycle trait!")]
+    #[should_panic(
+        expected = "The macro has to be declaired on an 'impl api_traits::Lifecycle for'!"
+    )]
     fn test_gengenerate_api_impl_wrong_lifecycle_impl() {
         let lifecycle_not_trait_impl = quote! {
             impl Lifecycle {}
