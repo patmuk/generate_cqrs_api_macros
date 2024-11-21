@@ -71,7 +71,7 @@ fn generate_cqrs_functions(
     let process_trait_impl = quote! {
         impl Cqrs for #enum_ident {
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                self.process_with_lifecycle(LifecycleImpl::get())
+                self.process_with_lifecycle(LifecycleImpl::get_singleton())
             }
         }
     };
@@ -761,7 +761,7 @@ mod tests {
         let expected = quote! {
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process (self) -> Result < Vec < Effect > , ProcessingError > {
-                    self.process_with_lifecycle(LifecycleImpl::get())
+                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
                 }
             }
             impl MyGoodDomainModelQuery {
@@ -790,7 +790,7 @@ mod tests {
                 }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get())
+                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
                 }
             }
             impl MyGoodDomainModelCommand {
