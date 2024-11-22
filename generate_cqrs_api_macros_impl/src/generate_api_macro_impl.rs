@@ -18,7 +18,6 @@ pub fn generate_api_impl(item: TokenStream, file_pathes: TokenStream) -> Result<
     log::info!("-------- Generating API --------");
     // check if it implements the Lifecycle trait
     // not parsing with syn::parse, to save time. Returning the unchanged input anyways, would need to clone() otherwise
-    println!("item: {:?}", item.to_string());
     if !item.to_string().contains("Lifecycle for ") {
         panic!("The macro has to be declaired on an 'impl api_traits::Lifecycle for'!");
     }
