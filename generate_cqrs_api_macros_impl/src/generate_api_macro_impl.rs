@@ -4,8 +4,10 @@ use crate::generating::generate_cqrs_impl::generate_cqrs_impl;
 use crate::generating::generate_effect_enum::generate_effect_enum;
 use crate::generating::generate_error_enum::generate_error_enum;
 use crate::generating::generate_use_statement::generate_use_statement;
+use crate::generating::traits::api_traits::generate_api_traits;
+use crate::generating::traits::cqrs_traits::generate_cqrs_traits;
 use crate::parsing::get_domain_model_struct::get_domain_model_struct_ident;
-use crate::parsing::get_use_statements::get_use_statements;
+// use crate::parsing::get_use_statements::get_use_statements;
 use crate::parsing::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -40,7 +42,8 @@ pub fn generate_api_impl(item: TokenStream, file_pathes: TokenStream) -> Result<
 fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenStream> {
     let ast = syn::parse_file(&file_content.0)?;
     // take all imports, just in case they are used in the generated code (like RustAutoOpaque)
-    let use_statements = get_use_statements(&ast);
+    // not needed. If needed later, remove import to generated traits!
+    // let use_statements = get_use_statements(&ast);
     // import all types defined in the parsed file
     let base_use_statement = generate_use_statement(&base_path, "*");
 
@@ -57,11 +60,14 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
         &error_ident,
         &ast,
     );
+    let generated_api_traits = generate_api_traits();
+    let generated_cqrs_traits = generate_cqrs_traits();
 
     let generated_code = quote! {
-        use crate::utils::cqrs_traits::Cqrs;
         #base_use_statement
-        #(#use_statements)*
+        // #(#use_statements)*
+        #generated_api_traits
+        #generated_cqrs_traits
         #generated_error_enum
         #generated_effect_enum
         #generated_cqrs_fns
