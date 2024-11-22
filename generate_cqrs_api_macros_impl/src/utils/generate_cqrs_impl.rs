@@ -211,7 +211,18 @@ fn generate_cqrs_enum_variants(cqrs_fns_sig_tipes: &[(Ident, Vec<Ident>)]) -> Ve
     cqrs_fns_sig_tipes
         .iter()
         .map(|(ident, args)| {
-            let enum_variant = format_ident!("{}", pascal_case_with_sep(&ident.to_string(), "_"));
+            // remove the prefix, if it is a variant of "command" or "query"
+            let ident_string = ident.to_string();
+            let cleaned_ident = if let Some(split_pos) = ident_string.find('_') {
+                match &ident_string[0..split_pos] {
+                    "command" | "com" | "query" => &ident_string[split_pos + 1..],
+                    _ => ident_string.as_str(),
+                }
+            } else {
+                ident_string.as_str()
+            };
+            let enum_variant = format_ident!("{}", pascal_case_with_sep(cleaned_ident, "_"));
+
             if args.is_empty() {
                 quote! {#enum_variant}
             } else {
@@ -693,17 +704,16 @@ mod tests {
             #cqrs_q_enum
             #cqrs_c_enum
         };
-
         let expected = quote! {
             #[derive(Debug)]
             pub enum MyGoodDomainModelQuery {
                 AllItems,
-                QueryGetItem(usize)
+                GetItem(usize)
             }
             #[derive(Debug)]
             pub enum MyGoodDomainModelCommand  {
                 AddItem(String, usize),
-                CommandCleanList,
+                CleanList,
                 RemoveItem(usize)
             }
         };
