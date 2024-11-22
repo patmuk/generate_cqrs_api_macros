@@ -75,7 +75,7 @@ pub(crate) fn get_enum_by_ident_keyword(ast: &File, keyword: &str) -> ItemEnum {
 mod tests {
     use quote::{format_ident, quote};
 
-    use crate::utils::get_enum::{get_enum_by_ident_keyword, get_enum_type_by_ident_keyword};
+    use crate::parsing::get_enum::{get_enum_by_ident_keyword, get_enum_type_by_ident_keyword};
 
     #[test]
     fn get_enum_test() {

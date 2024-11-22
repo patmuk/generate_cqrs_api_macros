@@ -10,9 +10,7 @@ use syn::Ident;
 use syn::ImplItemFn;
 use syn::Variant;
 
-use super::type_2_ident::get_path;
-use crate::utils::type_2_ident::get_ident;
-use crate::utils::type_2_ident::get_type_name;
+use crate::parsing::type_2_ident::{get_ident, get_path, get_type_name};
 
 pub(crate) fn generate_cqrs_impl(
     domain_model_struct_ident: &Ident,
@@ -444,7 +442,7 @@ mod tests {
     use quote::{format_ident, quote};
     use syn::parse_str;
 
-    use crate::utils::generate_cqrs_impl::{
+    use crate::generating::generate_cqrs_impl::{
         generate_cqrs_command_enum, generate_cqrs_functions, generate_cqrs_query_enum,
         get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes, get_cqrs_functions,
     };

@@ -2,7 +2,7 @@ use log::{debug, info, trace};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::Result;
 
-use crate::{generate_api_macro_impl::{BasePath, SourceCode}, utils::file_location_2_base_path::file_location_2_base_path};
+use crate::{generate_api_macro_impl::{BasePath, SourceCode}, parsing::file_location_2_base_path::file_location_2_base_path};
 
 /// extracts file locations from a TokenStream
 pub (crate) fn tokens_2_file_locations(file_pathes: TokenStream) -> Result<Vec<String>> {

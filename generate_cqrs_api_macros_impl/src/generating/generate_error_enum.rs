@@ -6,8 +6,8 @@ use syn::File;
 use syn::Ident;
 
 use crate::generate_api_macro_impl::BasePath;
-use crate::utils::generate_use_statement::generate_use_statement;
-use crate::utils::get_enum::get_enum_type_by_ident_keyword;
+use crate::generating::generate_use_statement::generate_use_statement;
+use crate::parsing::get_enum::get_enum_type_by_ident_keyword;
 
 pub(crate) fn generate_error_enum(base_path: &BasePath, ast: &File) -> (Ident, TokenStream) {
     let processing_error_enum = get_enum_type_by_ident_keyword(ast, "Error");
@@ -41,7 +41,7 @@ mod tests {
     use quote::{format_ident, quote};
 
     use crate::{
-        generate_api_macro_impl::BasePath, utils::generate_error_enum::generate_error_enum,
+        generate_api_macro_impl::BasePath, generating::generate_error_enum::generate_error_enum,
     };
 
     #[test]

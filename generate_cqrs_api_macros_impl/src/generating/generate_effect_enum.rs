@@ -5,7 +5,7 @@ use syn::File;
 use syn::Ident;
 use syn::Variant;
 
-use crate::utils::get_enum::get_enum_by_ident_keyword;
+use crate::parsing::get_enum::get_enum_by_ident_keyword;
 
 pub(crate) fn generate_effect_enum(
     domain_struct_name: &Ident,
@@ -41,7 +41,7 @@ pub(crate) fn generate_effect_enum(
 mod tests {
     use quote::{format_ident, quote};
 
-    use crate::utils::generate_effect_enum::generate_effect_enum;
+    use crate::generating::generate_effect_enum::generate_effect_enum;
 
     #[test]
     fn generate_effect_enum_test() {

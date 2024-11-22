@@ -23,7 +23,8 @@ mod tests {
     use quote::quote;
 
     use crate::{
-        generate_api_macro_impl::BasePath, utils::generate_use_statement::generate_use_statement,
+        generate_api_macro_impl::BasePath,
+        generating::generate_use_statement::generate_use_statement,
     };
 
     #[test]

@@ -46,7 +46,7 @@ pub(crate) fn get_domain_model_struct_ident(ast: &File) -> Result<Ident> {
 #[cfg(test)]
 mod tests {
 
-    use crate::utils::get_domain_model_struct::get_domain_model_struct_ident;
+    use crate::parsing::get_domain_model_struct::get_domain_model_struct_ident;
 
     const DEFAULT_CODE: &str = r#"
             use::MyGoodProcessingError;

@@ -1,12 +1,12 @@
 use log::debug;
 
-use crate::utils::generate_cqrs_impl::generate_cqrs_impl;
-use crate::utils::generate_effect_enum::generate_effect_enum;
-use crate::utils::generate_error_enum::generate_error_enum;
-use crate::utils::generate_use_statement::generate_use_statement;
-use crate::utils::get_domain_model_struct::get_domain_model_struct_ident;
-use crate::utils::get_use_statements::get_use_statements;
-use crate::utils::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
+use crate::generating::generate_cqrs_impl::generate_cqrs_impl;
+use crate::generating::generate_effect_enum::generate_effect_enum;
+use crate::generating::generate_error_enum::generate_error_enum;
+use crate::generating::generate_use_statement::generate_use_statement;
+use crate::parsing::get_domain_model_struct::get_domain_model_struct_ident;
+use crate::parsing::get_use_statements::get_use_statements;
+use crate::parsing::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
@@ -76,7 +76,7 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
 #[cfg(test)]
 mod tests {
     use crate::{
-        generate_api_macro_impl::generate_code, utils::read_rust_files::read_rust_file_content,
+        generate_api_macro_impl::generate_code, parsing::read_rust_files::read_rust_file_content,
     };
     use quote::quote;
 
