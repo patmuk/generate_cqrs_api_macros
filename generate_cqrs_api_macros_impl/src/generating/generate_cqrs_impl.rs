@@ -781,7 +781,7 @@ mod tests {
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
                         MyGoodDomainModelQuery::AllItems => my_good_domain_model_lock.all_items(),
-                        MyGoodDomainModelQuery::QueryGetItem(item_pos) => my_good_domain_model_lock.query_get_item(item_pos),
+                        MyGoodDomainModelQuery::GetItem(item_pos) => my_good_domain_model_lock.query_get_item(item_pos),
                     }.map_err(ProcessingError::MyGoodProcessingError)?;
                     Ok(result
                         .into_iter()
@@ -810,7 +810,7 @@ mod tests {
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
                         MyGoodDomainModelCommand::AddItem(item, priority) => my_good_domain_model_lock.add_item(item, priority),
-                        MyGoodDomainModelCommand::CommandCleanList => my_good_domain_model_lock.command_clean_list(),
+                        MyGoodDomainModelCommand::CleanList => my_good_domain_model_lock.command_clean_list(),
                         MyGoodDomainModelCommand::RemoveItem(item_pos) => my_good_domain_model_lock.remove_item(item_pos) ,
                     }
                     .map_err(ProcessingError::MyGoodProcessingError)?;
