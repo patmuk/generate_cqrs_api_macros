@@ -100,11 +100,56 @@ mod tests {
     #[test]
     fn generate_all_from_good_file_test() {
         let expected = quote! {
-            use crate :: utils :: cqrs_traits :: Cqrs ;
-            use crate :: good_source_file :: * ;
-            use crate :: mocks :: app_state_mock ;
-            use crate :: mocks :: cqrs_traits_mock ;
-            use crate :: mocks :: rust_auto_opaque_mock ;
+            use crate::good_source_file::*;
+            use log::debug;
+            use std::path::PathBuf;
+            pub trait Lifecycle {
+                #[doc = r" the app config is to be set only once, and read afterwards. If mutation is needed wrapp it into a lock for concurrent write access"]
+                #[doc = r" to avoid an illegal state (app state not loaded) we do the setup and init in one go"]
+                #[doc = r" get the instance with get()"]
+                fn new(path: Option<String>) -> &'static Self;
+                fn get_singleton() -> &'static Self;
+                fn app_config(&self) -> &impl AppConfig;
+                fn app_state(&self) -> &impl AppState;
+                #[doc = r" call to initialize the app."]
+                #[doc = r" loads the app's state, which can be io-heavy"]
+                fn init<AC: AppConfig, AS: AppState>(app_config: &AC) -> AS {
+                    debug!("Initializing app with config: {:?}", app_config);
+                    AppState::load_or_new(app_config)
+                }
+                fn persist(&self) -> Result<(), std::io::Error>;
+                fn shutdown(&self) -> Result<(), std::io::Error>;
+            }
+            pub trait AppConfig: Default + std::fmt::Debug {
+                #[doc = r" call to overwrite default values."]
+                #[doc = r" Doesn't trigger initialization."]
+                fn new(path: Option<String>) -> Self;
+                fn get_app_state_file_path(&self) -> &std::path::PathBuf;
+            }
+            pub trait AppState {
+                fn load_or_new<A: AppConfig>(app_config: &A) -> Self
+                where
+                    Self: Sized;
+                #[allow(clippy::ptr_arg)]
+                fn persist_to_path(&self, path: &PathBuf) -> Result<(), std::io::Error>;
+                fn dirty_flag_value(&self) -> bool;
+                fn mark_dirty(&self);
+            }
+            pub(crate) trait CqrsModel: std::marker::Sized + Default {
+                fn new() -> Self {
+                    Self::default()
+                }
+            }
+            pub(crate) trait CqrsModelLock<CqrsModel>:
+                Default + From<CqrsModel> + std::marker::Sized + Clone
+            {
+                fn new() -> Self {
+                    Self::default()
+                }
+            }
+            pub trait Cqrs: std::fmt::Debug {
+                fn process(self) -> Result<Vec<Effect>, ProcessingError>;
+            }
             use crate :: good_source_file :: MyGoodProcessingError ;
 
             #[derive(thiserror :: Error, Debug)]
