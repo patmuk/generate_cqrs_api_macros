@@ -1,8 +1,10 @@
 pub(crate) fn file_location_2_base_path(file_path: &str) -> String {
-    let mut path_split = file_path.split('/').skip_while(|element| *element != "src");
+    let mut path_split = file_path
+        .split('/')
+        .skip_while(|element| *element != "src" && *element != "tests");
     path_split
         .next()
-        .expect("file path needs to contain 'src/'");
+        .expect("file path needs to contain 'src/' or 'tests/'");
     let dirty_result = format!("crate::{}", path_split.collect::<Vec<&str>>().join("::"));
     match &dirty_result[dirty_result.rfind("::").unwrap()..] {
         "::mod.rs" => dirty_result[..dirty_result.len() - 8].to_string(),

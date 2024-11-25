@@ -160,7 +160,7 @@ mod tests {
                 NotPersisted(#[source] std::io::Error),
             }
             pub enum Effect {
-                MyGoodDomainModelRenderItems(RustAutoOpaque<MyGoodDomainModel>)
+                MyGoodDomainModelRenderItems(MyGoodDomainModelLock)
             }
             #[derive(Debug)]
             pub enum MyGoodDomainModelQuery {
@@ -192,8 +192,8 @@ mod tests {
                     Ok(result
                     .into_iter()
                     .map(|effect| match effect {
-                        MyGoodDomainModelEffect::RenderItems(rust_auto_opaque_my_good_domain_model) =>
-                            Effect::MyGoodDomainModelRenderItems(rust_auto_opaque_my_good_domain_model) ,
+                        MyGoodDomainModelEffect::RenderItems(my_good_domain_model_lock) =>
+                            Effect::MyGoodDomainModelRenderItems(my_good_domain_model_lock) ,
                     })
                     .collect())
                 }
@@ -224,14 +224,14 @@ mod tests {
                     Ok(result
                         .into_iter()
                         .map(|effect| match effect {
-                            MyGoodDomainModelEffect::RenderItems(rust_auto_opaque_my_good_domain_model) =>
-                                Effect::MyGoodDomainModelRenderItems(rust_auto_opaque_my_good_domain_model),
+                            MyGoodDomainModelEffect::RenderItems(my_good_domain_model_lock) =>
+                                Effect::MyGoodDomainModelRenderItems(my_good_domain_model_lock),
                         })
                         .collect())
                 }
             }
         };
-        let (base_path, content) = read_rust_file_content("../tests/src/good_source_file.rs")
+        let (base_path, content) = read_rust_file_content("../tests/good_source_file/mod.rs")
             .expect("Could not read test oracle file: ");
 
         let result = generate_code(base_path, content).unwrap();
