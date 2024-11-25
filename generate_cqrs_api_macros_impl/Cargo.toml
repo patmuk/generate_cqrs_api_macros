@@ -16,4 +16,4 @@ stringcase = "0.3.0"
 # prettyplease = "0.2.25"
 
 [dev-dependencies]
-thiserror = "^1.0.51"
+thiserror = "^2.0.3"
