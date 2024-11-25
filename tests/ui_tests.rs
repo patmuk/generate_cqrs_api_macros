@@ -1,12 +1,18 @@
+#[test]
+fn test_compile_macro() {
+    let try_build = trybuild::TestCases::new();
+    try_build.pass("tests/ui_tests.rs");
+}
+
 mod good_source_file;
 use generate_cqrs_api_macros::generate_api;
-use good_source_file::{AppStateImpl, MyGoodDomainModelLock};
+use good_source_file::AppStateImpl;
 
 pub struct LifecycleImpl {
     app_state: AppStateImpl,
 }
 
-#[generate_api("tests/good_source_file/mod.rs")]
+#[generate_api("./tests/good_source_file/mod.rs")]
 impl Lifecycle for LifecycleImpl {
     fn new(_: std::option::Option<std::string::String>) -> &'static Self {
         unimplemented!()
@@ -32,3 +38,5 @@ impl Lifecycle for LifecycleImpl {
     }
 }
 // impl Lifecycle for UiTests {}
+
+pub fn main() {}

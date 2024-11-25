@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use log::{debug, info, trace};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::Result;
@@ -29,24 +31,27 @@ pub (crate) fn read_rust_file_content(file_path: &str) -> Result<(BasePath, Sour
     
     debug!("base path is: {:#?}", path);
 
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|io_error| {
-            let current_dir = std::env::current_dir();
-            match current_dir {
-                Ok(cwd) => {
-                    syn::Error::new(
-                        Span::call_site(),
-                        format!("Error loading the given files: {io_error}\nlooked in: {cwd:?} / \"{file_path}\"\nFile pathes need start from the project root."),
-                    )
-                }
-                Err(cwd_io_error) =>                     
-                        syn::Error::new(
+    // reading the file based on crate_working_directory
+    // let env_var_key = "CARGO_TARGET_DIR";
+    let env_var_key = "CARGO_MANIFEST_DIR";
+    let cargo_dir = PathBuf::from(std::env::var(env_var_key).map_err(|var_error|                        syn::Error::new(
+    // let cargo_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").map_err(|var_error|                        syn::Error::new(
                         Span::call_site(),
                     format!(
-                        "Error reading cwd: {cwd_io_error}\nwhile loading the given files: {io_error}\nFile pathes need start from the project root."),
+                        "Error reading variable '{env_var_key}': {var_error}\nwhile loading the given files: {file_path}\n."),
                     ),
+    )?);
+    // let cargo_dir = std::env::current_dir().unwrap();
+    // let cargo_dir = std::env::temp_dir();
+    let content = std::fs::read_to_string(cargo_dir.join(file_path))
+        .map_err(|io_error| {
+            // let current_dir = std::env::current_dir();
+                    syn::Error::new(
+                        Span::call_site(),
+                        format!("Error loading the given files: {io_error}\nlooked in: {cargo_dir:?} / \"{file_path}\"\nFile pathes need start from the project root."),
+                    )
                 }
-            }    
+            
         )?;
     trace!("file content: \n{}", content);
     Ok ((BasePath(path), SourceCode(content)))
