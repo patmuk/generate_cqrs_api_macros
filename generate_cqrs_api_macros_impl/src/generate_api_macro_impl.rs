@@ -6,7 +6,8 @@ use crate::generating::generate_error_enum::generate_error_enum;
 use crate::generating::generate_use_statement::generate_use_statement;
 use crate::generating::traits::api_traits::generate_api_traits;
 use crate::generating::traits::cqrs_traits::generate_cqrs_traits;
-use crate::parsing::get_domain_model_struct::get_domain_model_struct_ident;
+
+use crate::parsing::get_struct_by_trait::get_structs_by_traits;
 // use crate::parsing::get_use_statements::get_use_statements;
 use crate::parsing::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::TokenStream;
@@ -21,7 +22,7 @@ pub fn generate_api_impl(item: TokenStream, file_pathes: TokenStream) -> Result<
     // check if it implements the Lifecycle trait
     // not parsing with syn::parse, to save time. Returning the unchanged input anyways, would need to clone() otherwise
     if !item.to_string().contains("Lifecycle for ") {
-        panic!("The macro has to be declaired on an 'impl api_traits::Lifecycle for'!");
+        panic!("The macro has to be declaired on an 'impl Lifecycle for'!");
     }
 
     let file_locations = tokens_2_file_locations(file_pathes)?;
@@ -47,14 +48,20 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
     // import all types defined in the parsed file
     let base_use_statement = generate_use_statement(&base_path, "*");
 
-    let domain_model_struct_ident = get_domain_model_struct_ident(&ast)
+    let trait_impls = get_structs_by_traits(&ast, &["CqrsModel", "CqrsModelLock"]);
+    let domain_model_struct_ident = trait_impls
+        .get("CqrsModel")
         .expect("Couldn't extract the domain model's name. One Struct needs to derive CqrsModel.");
     debug!("domain model name: {:#?}", domain_model_struct_ident);
+    let domain_model_lock_ident = trait_impls.get("CqrsModelLock").expect(
+        "Couldn't extract the domain model lock's name. One Struct needs to derive CqrsModelLock.",
+    );
+    debug!("domain model lock name: {:#?}", domain_model_lock_ident);
     let (effect_ident, effect_variants, generated_effect_enum) =
-        generate_effect_enum(&domain_model_struct_ident, &ast);
+        generate_effect_enum(domain_model_struct_ident, &ast);
     let (error_ident, generated_error_enum) = generate_error_enum(&base_path, &ast);
     let generated_cqrs_fns = generate_cqrs_impl(
-        &domain_model_struct_ident,
+        domain_model_struct_ident,
         &effect_ident,
         &effect_variants,
         &error_ident,
@@ -233,7 +240,6 @@ mod tests {
         };
         let (base_path, content) = read_rust_file_content("../tests/good_source_file/mod.rs")
             .expect("Could not read test oracle file: ");
-
         let result = generate_code(base_path, content).unwrap();
         assert_eq!(expected.to_string(), result.to_string());
     }
@@ -249,9 +255,7 @@ mod tests {
         let _ = generate_api_impl(lifecycle_impl, quote! {});
     }
     #[test]
-    #[should_panic(
-        expected = "The macro has to be declaired on an 'impl api_traits::Lifecycle for'!"
-    )]
+    #[should_panic(expected = "The macro has to be declaired on an 'impl Lifecycle for'!")]
     fn test_gengenerate_api_impl_wrong_lifecycle_impl() {
         let lifecycle_not_trait_impl = quote! {
             impl Lifecycle {}
