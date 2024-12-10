@@ -5,26 +5,24 @@ use quote::quote;
 use syn::File;
 use syn::Ident;
 
-use crate::generate_api_macro_impl::BasePath;
-use crate::generating::generate_use_statement::generate_use_statement;
 use crate::parsing::get_enum::get_enum_type_by_ident_keyword;
 
-pub(crate) fn generate_error_enum(base_path: &BasePath, ast: &File) -> (Ident, TokenStream) {
+pub(crate) fn generate_error_enum(ast: &File) -> (Ident, TokenStream) {
     let processing_error_enum = get_enum_type_by_ident_keyword(ast, "Error");
 
     debug!(
         "----------- processing error enum(s): {:#?}\n",
         processing_error_enum
     );
-
-    let use_statement = generate_use_statement(base_path, &processing_error_enum.to_string());
+    // we are importing * from the base path, so this is imported already
+    // otherwise, we need to know which Error belongs to which Model of which base path
+    // let use_statement = generate_use_statement(base_path, &processing_error_enum.to_string());
     let processing_error = format_ident!("{processing_error_enum}");
 
     (
         processing_error.clone(),
         quote! {
-            #use_statement
-
+            // #use_statement
             #[derive(thiserror::Error, Debug)]
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
@@ -40,9 +38,7 @@ pub(crate) fn generate_error_enum(base_path: &BasePath, ast: &File) -> (Ident, T
 mod tests {
     use quote::{format_ident, quote};
 
-    use crate::{
-        generate_api_macro_impl::BasePath, generating::generate_error_enum::generate_error_enum,
-    };
+    use crate::generating::generate_error_enum::generate_error_enum;
 
     #[test]
     fn generate_error_enum_test() {
@@ -57,12 +53,10 @@ mod tests {
         )
         .expect("test oracle should be parsable");
 
-        let result = generate_error_enum(&BasePath("crate::Model".to_string()), &ast);
+        let result = generate_error_enum(&ast);
         let expected = (
             format_ident!("MyGoodProcessingError"),
             quote! {
-                use crate::Model::MyGoodProcessingError;
-
                 #[derive(thiserror::Error, Debug)]
                 pub enum ProcessingError {
                     #[error("Error during processing: {0}")]
@@ -104,13 +98,11 @@ mod tests {
         )
         .expect("test oracle should be parsable");
 
-        let result = generate_error_enum(&BasePath("crate::Model".to_string()), &ast);
+        let result = generate_error_enum(&ast);
 
         let expected = (
             format_ident!("MyGoodProcessingError"),
             quote! {
-                use::MyGoodProcessingError;
-
                 #[derive(thiserror::Error, Debug)]
                 pub enum ProcessingError {
                     #[error("Error during processing: {0}")]
@@ -137,13 +129,11 @@ mod tests {
         )
         .expect("test oracle should be parsable");
 
-        let result = generate_error_enum(&BasePath("crate::Model".to_string()), &ast);
+        let result = generate_error_enum(&ast);
 
         let expected = (
             format_ident!("MyGoodProcessingError"),
             quote! {
-                use::MyGoodProcessingError;
-
                 #[derive(thiserror::Error, Debug)]
                 pub enum ProcessingError {
                     #[error("Error during processing: {0}")]

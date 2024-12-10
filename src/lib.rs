@@ -4,11 +4,11 @@ use generate_cqrs_api_macros_impl::generate_api_macro_impl;
 use proc_macro::TokenStream;
 
 #[proc_macro_attribute]
-pub fn generate_api(file_pathes: TokenStream, item: TokenStream) -> proc_macro::TokenStream {
+pub fn generate_api(file_paths: TokenStream, item: TokenStream) -> proc_macro::TokenStream {
     TokenStream::from(
         generate_api_macro_impl::generate_api_impl(
             proc_macro2::TokenStream::from(item),
-            proc_macro2::TokenStream::from(file_pathes),
+            proc_macro2::TokenStream::from(file_paths),
         )
         .unwrap_or_else(|e| e.to_compile_error()),
     )

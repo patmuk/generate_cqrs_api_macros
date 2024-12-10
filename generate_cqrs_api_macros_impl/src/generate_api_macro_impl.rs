@@ -14,10 +14,11 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
 
+#[derive(Debug, PartialEq)]
 pub(crate) struct BasePath(pub(crate) String);
 pub(crate) struct SourceCode(pub(crate) String);
 
-pub fn generate_api_impl(item: TokenStream, file_pathes: TokenStream) -> Result<TokenStream> {
+pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<TokenStream> {
     log::info!("-------- Generating API --------");
     // check if it implements the Lifecycle trait
     // not parsing with syn::parse, to save time. Returning the unchanged input anyways, would need to clone() otherwise
@@ -25,13 +26,13 @@ pub fn generate_api_impl(item: TokenStream, file_pathes: TokenStream) -> Result<
         panic!("The macro has to be declaired on an 'impl Lifecycle for'!");
     }
 
-    let file_locations = tokens_2_file_locations(file_pathes)?;
+    let file_locations = tokens_2_file_locations(file_paths)?;
     if file_locations.is_empty() {
         panic!("At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]");
     }
-    let (base_path, file_content) = read_rust_file_content(&file_locations[0])?;
+    let (model_paths, file_content) = read_rust_file_content(file_locations)?;
 
-    let generated_code = generate_code(base_path, file_content)?;
+    let generated_code = generate_code(model_paths, file_content)?;
 
     let output = quote! {
         #item
@@ -40,13 +41,11 @@ pub fn generate_api_impl(item: TokenStream, file_pathes: TokenStream) -> Result<
     Ok(output)
 }
 
-fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenStream> {
+fn generate_code(base_paths: Vec<BasePath>, file_content: SourceCode) -> Result<TokenStream> {
     let ast = syn::parse_file(&file_content.0)?;
     // take all imports, just in case they are used in the generated code (like RustAutoOpaque)
     // not needed. If needed later, remove import to generated traits!
     // let use_statements = get_use_statements(&ast);
-    // import all types defined in the parsed file
-    let base_use_statement = generate_use_statement(&base_path, "*");
 
     let trait_impls = get_structs_by_traits(&ast, &["CqrsModel", "CqrsModelLock"]);
     let domain_model_struct_ident = trait_impls
@@ -59,7 +58,7 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
     debug!("domain model lock name: {:#?}", domain_model_lock_ident);
     let (effect_ident, effect_variants, generated_effect_enum) =
         generate_effect_enum(domain_model_struct_ident, &ast);
-    let (error_ident, generated_error_enum) = generate_error_enum(&base_path, &ast);
+    let (error_ident, generated_error_enum) = generate_error_enum(&ast);
     let generated_cqrs_fns = generate_cqrs_impl(
         domain_model_struct_ident,
         &effect_ident,
@@ -70,9 +69,13 @@ fn generate_code(base_path: BasePath, file_content: SourceCode) -> Result<TokenS
     let generated_api_traits = generate_api_traits();
     let generated_cqrs_traits = generate_cqrs_traits();
 
+    let use_statements = base_paths
+        .iter()
+        .map(|base_path| generate_use_statement(base_path, "*"))
+        .collect::<Vec<TokenStream>>();
+
     let generated_code = quote! {
-        #base_use_statement
-        // #(#use_statements)*
+        #(#use_statements)*
         #generated_api_traits
         #generated_cqrs_traits
         #generated_error_enum
@@ -94,15 +97,6 @@ mod tests {
     use quote::quote;
 
     use super::generate_api_impl;
-
-    // use syn::{
-    //     parse::{Parse, Parser},
-    //     parse_str, File,
-    // };
-    // use proc_macro2::TokenStream;
-    // pub fn prettyprint(tokens: TokenStream) -> String {
-    //     prettyplease::unparse(&syn::File::parse.parse2(tokens).unwrap())
-    // }
 
     #[test]
     fn generate_all_from_good_file_test() {
@@ -157,7 +151,6 @@ mod tests {
             pub trait Cqrs: std::fmt::Debug {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError>;
             }
-            use crate :: good_source_file :: MyGoodProcessingError ;
 
             #[derive(thiserror :: Error, Debug)]
             pub enum ProcessingError {
@@ -238,9 +231,10 @@ mod tests {
                 }
             }
         };
-        let (base_path, content) = read_rust_file_content("../tests/good_source_file/mod.rs")
-            .expect("Could not read test oracle file: ");
-        let result = generate_code(base_path, content).unwrap();
+        let (use_statements, content) =
+            read_rust_file_content(vec!["../tests/good_source_file/mod.rs".to_string()])
+                .expect("Could not read test oracle file: ");
+        let result = generate_code(use_statements, content).unwrap();
         assert_eq!(expected.to_string(), result.to_string());
     }
 
