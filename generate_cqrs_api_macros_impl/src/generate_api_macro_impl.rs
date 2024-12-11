@@ -28,7 +28,7 @@ pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<T
 
     let file_locations = tokens_2_file_locations(file_paths)?;
     if file_locations.is_empty() {
-        panic!("At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]");
+        panic!("At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]\nProvide multiple model implementations with #[generate_api(\"domain/MyModel.rs\", \"other_domain/MySecondModel.rs\")]");
     }
     let (model_paths, file_content) = read_rust_file_content(file_locations)?;
 
