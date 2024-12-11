@@ -6,7 +6,8 @@ pub struct LifecycleImpl {
     app_state: AppStateImpl,
 }
 
-#[generate_api("tests/good_source_file/mod.rs")]
+// #[generate_api("tests/good_source_file/mod.rs")]
+#[generate_api("tests/good_source_file/mod.rs", "tests/second_model_file/mod.rs")]
 impl Lifecycle for LifecycleImpl {
     fn new(_: std::option::Option<std::string::String>) -> &'static Self {
         unimplemented!()

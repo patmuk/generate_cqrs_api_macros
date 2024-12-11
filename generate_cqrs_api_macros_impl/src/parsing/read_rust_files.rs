@@ -71,3 +71,41 @@ pub(crate) fn read_rust_file_content(
     // Return the combined use statements and source code content.
     Ok((base_paths, SourceCode(content)))
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::parsing::read_rust_files::tokens_2_file_locations;
+    use quote::quote;
+
+    #[test]
+    fn parse_one_filepath() {
+        let input = quote! {"tests/good_source_file/mod.rs"};
+        assert_eq!(
+            vec!["tests/good_source_file/mod.rs"],
+            tokens_2_file_locations(input).unwrap()
+        );
+    }
+    #[test]
+    fn parse_two_filepaths() {
+        let input = quote! {"tests/good_source_file/mod.rs", "tests/second_model_file/mod.rs"};
+        assert_eq!(
+            vec![
+                "tests/good_source_file/mod.rs",
+                "tests/second_model_file/mod.rs"
+            ],
+            tokens_2_file_locations(input).unwrap()
+        );
+    }
+    #[test]
+    fn parse_three_filepaths() {
+        let input = quote! {"tests/good_source_file/mod.rs", "tests/second_model_file/mod.rs", "tests/third_model_file/mod.rs"};
+        assert_eq!(
+            vec![
+                "tests/good_source_file/mod.rs",
+                "tests/second_model_file/mod.rs",
+                "tests/third_model_file/mod.rs"
+            ],
+            tokens_2_file_locations(input).unwrap()
+        );
+    }
+}
