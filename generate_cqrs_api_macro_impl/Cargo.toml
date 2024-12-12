@@ -1,5 +1,5 @@
 [package]
-name = "generate_cqrs_api_macros_impl"
+name = "generate_cqrs_api_macro_impl"
 version = "0.1.0"
 edition = "2021"
 resolver = "2"

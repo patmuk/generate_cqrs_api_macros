@@ -1,6 +1,6 @@
 extern crate proc_macro;
 
-use generate_cqrs_api_macros_impl::generate_api_macro_impl;
+use generate_cqrs_api_macro_impl::generate_api_macro_impl;
 use proc_macro::TokenStream;
 
 #[proc_macro_attribute]

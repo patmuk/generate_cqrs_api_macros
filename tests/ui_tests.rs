@@ -1,13 +1,13 @@
 mod good_source_file;
-use generate_cqrs_api_macros::generate_api;
+use generate_cqrs_api_macro::generate_api;
 use good_source_file::{AppStateImpl, MyGoodDomainModelLock};
 
 pub struct LifecycleImpl {
     app_state: AppStateImpl,
 }
 
-// #[generate_api("tests/good_source_file/mod.rs")]
-#[generate_api("tests/good_source_file/mod.rs", "tests/second_model_file/mod.rs")]
+// #[generate_api("tests/good_source_file/mod.rs", "tests/second_model_file/mod.rs")]
+#[generate_api("tests/good_source_file/mod.rs")]
 impl Lifecycle for LifecycleImpl {
     fn new(_: std::option::Option<std::string::String>) -> &'static Self {
         unimplemented!()

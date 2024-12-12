@@ -1,8 +1,8 @@
 [workspace]
-members = [".", "generate_cqrs_api_macros_impl"]
+members = [".", "generate_cqrs_api_macro_impl"]
 
 [package]
-name = "generate_cqrs_api_macros"
+name = "generate_cqrs_api_macro"
 version = "0.1.0"
 edition = "2021"
 resolver = "2"
@@ -11,7 +11,7 @@ resolver = "2"
 proc-macro = true
 
 [dependencies]
-generate_cqrs_api_macros_impl = {path = "generate_cqrs_api_macros_impl"}
+generate_cqrs_api_macro_impl = {path = "generate_cqrs_api_macro_impl"}
 proc-macro2 = "1.0.88"
 log = "0.4.22"
 simple_logger = "5.0.0"

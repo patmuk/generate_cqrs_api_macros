@@ -13,7 +13,7 @@
                     "test",
                     "--no-run",
                     "--test=ui_tests",
-                    "--package=generate_cqrs_api_macros"
+                    "--package=generate_cqrs_api_macro"
                 ],
                 "filter": {
                     "name": "ui_tests",
@@ -26,16 +26,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'generate_cqrs_api_macros_impl'",
+            "name": "Debug unit tests in library 'generate_cqrs_api_macro_impl'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=generate_cqrs_api_macros_impl"
+                    "--package=generate_cqrs_api_macro_impl"
                 ],
                 "filter": {
-                    "name": "generate_cqrs_api_macros_impl",
+                    "name": "generate_cqrs_api_macro_impl",
                     "kind": "lib"
                 }
             },
@@ -45,17 +45,17 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit test 'get_cqrs_fns_test' in library 'generate_cqrs_api_macros_impl'",
+            "name": "Debug unit test 'get_cqrs_fns_test' in library 'generate_cqrs_api_macro_impl'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=generate_cqrs_api_macros_impl",
+                    "--package=generate_cqrs_api_macro_impl",
                     "get_cqrs_fns_test"
                 ],
                 "filter": {
-                    "name": "generate_cqrs_api_macros_impl",
+                    "name": "generate_cqrs_api_macro_impl",
                     "kind": "lib"
                 }
             },
