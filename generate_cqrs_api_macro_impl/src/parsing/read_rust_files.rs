@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use log::{debug, info, trace};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::Result;
 
 use crate::{
     generate_api_macro_impl::{BasePath, SourceCode},
-    parsing::file_location_2_base_path::file_location_2_base_paths,
+    parsing::file_location_2_base_path::file_location_2_base_path,
 };
 
 /// extracts file locations from a TokenStream
@@ -28,10 +30,9 @@ pub(crate) fn tokens_2_file_locations(file_paths: TokenStream) -> Result<Vec<Str
 /// reads multiple rust files, generates use statements for them and returns their content in one concatenated String
 pub(crate) fn read_rust_file_content(
     file_paths: Vec<String>,
-) -> Result<(Vec<BasePath>, SourceCode)> {
-    // Read all file contents and concatenate them into a single string.
-    let content = file_paths.iter()
-        .map(|file_path| {
+) -> Result<Vec<(BasePath, SourceCode)>> {
+    file_paths.iter()
+        .map(|file_path| { 
             // Attempt to read each file's content as a string.
             std::fs::read_to_string(file_path).map_err(|io_error| {
                 let current_dir = std::env::current_dir();
@@ -49,27 +50,15 @@ pub(crate) fn read_rust_file_content(
                         ),
                     ),
                 }
-            })
+            }).and_then(|source| {
+            trace!("File content:\n{}", source);
+            let base_path = file_location_2_base_path(file_path);  // Assuming this function exists
+            debug!("Base path is: {:#?}", base_path);
+
+            // Return Ok with the tuple (BasePath, SourceCode)
+            Ok((base_path, SourceCode(source)))  // Assuming SourceCode is a struct
         })
-        .try_fold(String::new(), |mut acc, current| {
-            // Append the content of each file to the accumulator.
-            let c = current?;
-            if !acc.is_empty() {
-                acc.push('\n'); // Separate file contents with a newline.
-            }
-            acc.push_str(&c);
-            Ok::<String, syn::Error>(acc)
-        })?;
-
-    // Log the combined file content for debugging purposes.
-    trace!("File content:\n{}", content);
-
-    // Generate use statements from file locations.
-    let base_paths = file_location_2_base_paths(file_paths);
-    debug!("Bese paths are: {:#?}", base_paths);
-
-    // Return the combined use statements and source code content.
-    Ok((base_paths, SourceCode(content)))
+    }).collect()
 }
 
 #[cfg(test)]
