@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use log::{debug, info, trace};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::Result;

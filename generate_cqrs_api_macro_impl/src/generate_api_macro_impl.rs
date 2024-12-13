@@ -43,7 +43,7 @@ pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<T
 
 fn generate_code(paths_n_codes: Vec<(BasePath, SourceCode)>) -> Result<TokenStream> {
     let path_domain_model_ident_n_ast: Vec<(BasePath, Ident, Ident, File)> = paths_n_codes.into_iter().map(|path_n_code|{
-        let ast = syn::parse_file(&path_n_code.1.0).expect(format!("cannot parse the code file {}", path_n_code.0.0).as_str());
+        let ast = syn::parse_file(&path_n_code.1.0).unwrap_or_else(|_| panic!("cannot parse the code file {}", path_n_code.0.0));
         let trait_impls = get_structs_by_traits(&ast, &["CqrsModel", "CqrsModelLock"]);
         let domain_model_struct_ident = trait_impls
             .get("CqrsModel")
