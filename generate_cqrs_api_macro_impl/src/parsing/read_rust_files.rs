@@ -29,10 +29,10 @@ pub(crate) fn tokens_2_file_locations(file_paths: TokenStream) -> Result<Vec<Str
 pub(crate) fn read_rust_file_content(
     file_paths: Vec<String>,
 ) -> Result<Vec<(BasePath, SourceCode)>> {
-    file_paths.iter()
-        .map(|file_path| { 
-            // Attempt to read each file's content as a string.
-            std::fs::read_to_string(file_path).map_err(|io_error| {
+    file_paths.iter().map(|file_path| { 
+        // Attempt to read each file's content as a string.
+        std::fs::read_to_string(file_path)           
+            .map_err(|io_error| {
                 let current_dir = std::env::current_dir();
                 match current_dir {
                     Ok(cwd) => syn::Error::new(
@@ -48,15 +48,14 @@ pub(crate) fn read_rust_file_content(
                         ),
                     ),
                 }
-            }).and_then(|source| {
-            trace!("File content:\n{}", source);
-            let base_path = file_location_2_base_path(file_path);  // Assuming this function exists
-            debug!("Base path is: {:#?}", base_path);
+            }).map(|source|{            
+                trace!("File content:\n{}", source);
+                let base_path = file_location_2_base_path(file_path);  // Assuming this function exists
+                debug!("Base path is: {:#?}", base_path);
+                (base_path, SourceCode(source))
+            })
+        }).collect()
 
-            // Return Ok with the tuple (BasePath, SourceCode)
-            Ok((base_path, SourceCode(source)))  // Assuming SourceCode is a struct
-        })
-    }).collect()
 }
 
 #[cfg(test)]
