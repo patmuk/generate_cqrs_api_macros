@@ -86,16 +86,17 @@ fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
     // => not needed. If needed later, remove import to generated traits!
     // let use_statements = get_use_statements(&ast);
 
+    let (models_n_effect, generated_effect_enum) = generate_effects_enum(models_parsed);
     // TODO implement for all file paths!
-    let (model_n_effect, generated_effect_enum) = generate_effects_enum(models_parsed);
+    let model_n_effect = &models_n_effect[0];
     let (error_ident, generated_error_enum) = generate_error_enum(&model_n_effect.ast);
     let model_n_effects_n_errors = ModelNEffectsNErrors {
         error_ident,
-        base_path: model_n_effect.base_path,
-        ast: model_n_effect.ast,
-        domain_model_ident: model_n_effect.domain_model_ident,
-        effect_ident: model_n_effect.effect_ident,
-        effect_variants: model_n_effect.effect_variants,
+        base_path: model_n_effect.base_path.to_owned(),
+        ast: model_n_effect.ast.to_owned(),
+        domain_model_ident: model_n_effect.domain_model_ident.to_owned(),
+        effect_ident: model_n_effect.effect_ident.to_owned(),
+        effect_variants: model_n_effect.effect_variants.to_owned(),
     };
     let generated_cqrs_fns = generate_cqrs_impl(
         &model_n_effects_n_errors.domain_model_ident,
