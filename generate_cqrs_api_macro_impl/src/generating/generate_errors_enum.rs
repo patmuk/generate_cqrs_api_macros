@@ -38,7 +38,7 @@ pub(crate) fn generate_error_enum(ast: &File) -> (Ident, TokenStream) {
 mod tests {
     use quote::{format_ident, quote};
 
-    use crate::generating::generate_error_enum::generate_error_enum;
+    use crate::generating::generate_errors_enum::generate_error_enum;
 
     #[test]
     fn generate_error_enum_test() {

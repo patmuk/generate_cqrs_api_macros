@@ -3,7 +3,7 @@ use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::Result;
 
 use crate::{
-    generate_api_macro_impl::{BasePath, SourceCode},
+    generate_api_macro_impl::{ParsedFiles, SourceCode},
     parsing::file_location_2_base_path::file_location_2_base_path,
 };
 
@@ -28,7 +28,7 @@ pub(crate) fn tokens_2_file_locations(file_paths: TokenStream) -> Result<Vec<Str
 /// reads multiple rust files, generates use statements for them and returns their content in one concatenated String
 pub(crate) fn read_rust_file_content(
     file_paths: Vec<String>,
-) -> Result<Vec<(BasePath, SourceCode)>> {
+) -> Result<Vec<ParsedFiles>> {
     file_paths.iter().map(|file_path| { 
         // Attempt to read each file's content as a string.
         std::fs::read_to_string(file_path)           
@@ -52,7 +52,7 @@ pub(crate) fn read_rust_file_content(
                 trace!("File content:\n{}", source);
                 let base_path = file_location_2_base_path(file_path);  // Assuming this function exists
                 debug!("Base path is: {:#?}", base_path);
-                (base_path, SourceCode(source))
+                ParsedFiles{ base_path, source_code: SourceCode(source)}
             })
         }).collect()
 

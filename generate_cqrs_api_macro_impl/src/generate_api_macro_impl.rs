@@ -1,8 +1,8 @@
 use log::debug;
 
 use crate::generating::generate_cqrs_impl::generate_cqrs_impl;
-use crate::generating::generate_effect_enum::generate_effect_enum;
-use crate::generating::generate_error_enum::generate_error_enum;
+use crate::generating::generate_effects_enum::generate_effects_enum;
+use crate::generating::generate_errors_enum::generate_error_enum;
 use crate::generating::generate_use_statement::generate_use_statement;
 use crate::generating::traits::api_traits::generate_api_traits;
 use crate::generating::traits::cqrs_traits::generate_cqrs_traits;
@@ -12,11 +12,38 @@ use crate::parsing::get_struct_by_trait::get_structs_by_traits;
 use crate::parsing::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{File, Ident, Result};
+use syn::{Ident, Result, Variant};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) struct BasePath(pub(crate) String);
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) struct SourceCode(pub(crate) String);
+
+pub(crate) struct ParsedFiles {
+    pub(crate) base_path: BasePath,
+    pub(crate) source_code: SourceCode,
+}
+pub(crate) struct ModelParsed {
+    pub(crate) base_path: BasePath,
+    pub(crate) ast: syn::File,
+    pub(crate) domain_model_ident: Ident,
+}
+
+pub(crate) struct ModelNEffects {
+    pub(crate) base_path: BasePath,
+    pub(crate) ast: syn::File,
+    pub(crate) domain_model_ident: Ident,
+    pub(crate) effect_ident: Ident,
+    pub(crate) effect_variants: Vec<Variant>,
+}
+pub(crate) struct ModelNEffectsNErrors {
+    pub(crate) base_path: BasePath,
+    pub(crate) ast: syn::File,
+    pub(crate) domain_model_ident: Ident,
+    pub(crate) effect_ident: Ident,
+    pub(crate) effect_variants: Vec<Variant>,
+    pub(crate) error_ident: Ident,
+}
 
 pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<TokenStream> {
     log::info!("-------- Generating API --------");
@@ -30,9 +57,9 @@ pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<T
     if file_locations.is_empty() {
         panic!("At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]\nProvide multiple model implementations with #[generate_api(\"domain/MyModel.rs\", \"other_domain/MySecondModel.rs\")]");
     }
-    let paths_n_codes = read_rust_file_content(file_locations)?;
+    let parsed_files = read_rust_file_content(file_locations)?;
 
-    let generated_code = generate_code(paths_n_codes)?;
+    let generated_code = generate_code(parsed_files)?;
 
     let output = quote! {
         #item
@@ -41,43 +68,50 @@ pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<T
     Ok(output)
 }
 
-fn generate_code(paths_n_codes: Vec<(BasePath, SourceCode)>) -> Result<TokenStream> {
-    let path_domain_model_ident_n_ast: Vec<(BasePath, Ident, Ident, File)> = paths_n_codes.into_iter().map(|path_n_code|{
-        let ast = syn::parse_file(&path_n_code.1.0).unwrap_or_else(|_| panic!("cannot parse the code file {}", path_n_code.0.0));
+fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
+    let models_parsed: Vec<ModelParsed> = parsed_files.into_iter().map(|parsed_file|{
+        let ast = syn::parse_file(&parsed_file.source_code.0).unwrap_or_else(|_| panic!("cannot parse the code file {}", parsed_file.base_path.0));
         let trait_impls = get_structs_by_traits(&ast, &["CqrsModel", "CqrsModelLock"]);
-        let domain_model_struct_ident = trait_impls
+        let domain_model_ident = trait_impls
             .get("CqrsModel")
             .expect("Couldn't extract the domain model's name. One Struct needs to derive CqrsModel.");
-        debug!("domain model name: {:#?}", domain_model_struct_ident);
+        debug!("domain model name: {:#?}", domain_model_ident);
         let domain_model_lock_ident = trait_impls.get("CqrsModelLock").expect(
-            "Couldn't extract the domain model lock's name. One Struct needs to derive CqrsModelLock.",
+            "Couldn't extract the domaModelel lock's name. One Struct needs to derive CqrsModelLock.",
         );
         debug!("domain model lock name: {:#?}", domain_model_lock_ident);
-        (path_n_code.0, domain_model_struct_ident.to_owned(), domain_model_lock_ident.to_owned(), ast)
+        ModelParsed{base_path : parsed_file.base_path, ast, domain_model_ident: domain_model_ident.to_owned()}
     }).collect();
     // take all imports, just in case they are used in the generated code (like RustAutoOpaque)
     // => not needed. If needed later, remove import to generated traits!
     // let use_statements = get_use_statements(&ast);
+
     // TODO implement for all file paths!
-    let (effect_ident, effect_variants, generated_effect_enum) = generate_effect_enum(
-        &path_domain_model_ident_n_ast[0].1,
-        &path_domain_model_ident_n_ast[0].3,
-    );
-    let (error_ident, generated_error_enum) =
-        generate_error_enum(&path_domain_model_ident_n_ast[0].3);
+    let (model_n_effect, generated_effect_enum) = generate_effects_enum(models_parsed);
+    let (error_ident, generated_error_enum) = generate_error_enum(&model_n_effect.ast);
+    let model_n_effects_n_errors = ModelNEffectsNErrors {
+        error_ident,
+        base_path: model_n_effect.base_path,
+        ast: model_n_effect.ast,
+        domain_model_ident: model_n_effect.domain_model_ident,
+        effect_ident: model_n_effect.effect_ident,
+        effect_variants: model_n_effect.effect_variants,
+    };
     let generated_cqrs_fns = generate_cqrs_impl(
-        &path_domain_model_ident_n_ast[0].1,
-        &effect_ident,
-        &effect_variants,
-        &error_ident,
-        &path_domain_model_ident_n_ast[0].3,
+        &model_n_effects_n_errors.domain_model_ident,
+        &model_n_effects_n_errors.effect_ident,
+        &model_n_effects_n_errors.effect_variants,
+        &model_n_effects_n_errors.error_ident,
+        &model_n_effects_n_errors.ast,
     );
     let generated_api_traits = generate_api_traits();
     let generated_cqrs_traits = generate_cqrs_traits();
 
-    let use_statements = &path_domain_model_ident_n_ast
+    let use_statements = &[model_n_effects_n_errors]
         .iter()
-        .map(|base_path| generate_use_statement(&base_path.0, "*"))
+        .map(|model_n_effects_n_errors: &ModelNEffectsNErrors| {
+            generate_use_statement(&model_n_effects_n_errors.base_path, "*")
+        })
         .collect::<Vec<TokenStream>>();
 
     let generated_code = quote! {
