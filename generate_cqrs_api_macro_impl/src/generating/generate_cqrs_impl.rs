@@ -1001,7 +1001,8 @@ mod tests {
     #[test]
     fn generate_cqrs_impl_test_two_models() {
         let ast = syn::parse_file(CODE).expect("test oracle for model one should be parsable");
-        let ast_2 = syn::parse_file(CODE).expect("test oracle for model two should be parsable");
+        let ast_2 = syn::parse_file(CODE_SECOND_MODEL)
+            .expect("test oracle for model two should be parsable");
 
         let effect_code = parse_str::<syn::ItemEnum>(
             r#"pub enum MyGoodDomainModelEffect {
@@ -1059,6 +1060,17 @@ mod tests {
         };
 
         let expected = quote! {
+            #[derive(Debug)]
+            pub enum MyGoodDomainModelQuery {
+                AllItems,
+                GetItem(usize)
+            }
+            #[derive(Debug)]
+            pub enum MyGoodDomainModelCommand {
+                AddItem(String, usize),
+                CleanList,
+                RemoveItem(usize)
+            }
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process (self) -> Result < Vec < Effect > , ProcessingError > {
                     self.process_with_lifecycle(LifecycleImpl::get_singleton())
@@ -1121,6 +1133,76 @@ mod tests {
                     .collect())
                 }
             }
+            #[derive(Debug)]
+            pub enum MySecondDomainModelQuery {
+                AllObjects,
+                GetObject(usize)
+            }
+            #[derive(Debug)]
+            pub enum MySecondDomainModelCommand {
+                AddObject(String, usize),
+                CleanAllObjects,
+                CopyItem(usize)
+            }
+            impl Cqrs for MySecondDomainModelQuery {
+                fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
+                }
+            }
+            impl MySecondDomainModelQuery {
+                fn process_with_lifecycle(
+                    self,
+                    lifecycle: &LifecycleImpl,
+                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let app_state  = &lifecycle.app_state;
+                    let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
+                    let result = match self {
+                        MySecondDomainModelQuery::AllObjects => my_second_domain_model_lock.all_objects(),
+                        MySecondDomainModelQuery::GetObject(item_pos) => my_second_domain_model_lock.query_get_object(item_pos),
+                    }
+                    .map_err(ProcessingError::MySecondProcessingError)?;
+                    Ok(result
+                        .into_iter()
+                        .map(|effect| match effect {
+                            MySecondDomainModelEffect::RenderItems(model_lock) => Effect::MySecondDomainModelRenderItems(model_lock),
+                            MySecondDomainModelEffect::RenderItem(item) => Effect::MySecondDomainModelRenderItem(item),
+                            MySecondDomainModelEffect::RenderMySecondDomainModel(model_lock) => Effect::MySecondDomainModelRenderMySecondDomainModel(model_lock),
+                        })
+                        .collect())
+                }
+            }
+            impl Cqrs for MySecondDomainModelCommand {
+                fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
+                }
+            }
+            impl MySecondDomainModelCommand {
+                fn process_with_lifecycle(
+                    self,
+                    lifecycle: &LifecycleImpl,
+                ) -> Result<Vec<Effect>, ProcessingError> {
+                let app_state = &lifecycle.app_state;
+                let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
+                let (state_changed, result) = match self {
+                    MySecondDomainModelCommand::AddObject(item, priority) => my_second_domain_model_lock.add_object(item, priority),
+                    MySecondDomainModelCommand::CleanAllObjects => my_second_domain_model_lock.clean_all_objects(),
+                    MySecondDomainModelCommand::CopyItem(item_pos) => my_second_domain_model_lock.copy_item(item_pos),
+                }
+                .map_err(ProcessingError::MySecondProcessingError)?;
+                if state_changed {
+                    app_state.mark_dirty();
+                    lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                }
+                Ok(result
+                    .into_iter()
+                    .map(|effect| match effect {
+                        MySecondDomainModelEffect::RenderItems(model_lock) => Effect::MySecondDomainModelRenderItems(model_lock),
+                        MySecondDomainModelEffect::RenderItem(item) => Effect::MySecondDomainModelRenderItem(item),
+                        MySecondDomainModelEffect::RenderMySecondDomainModel(model_lock) => Effect::MySecondDomainModelRenderMySecondDomainModel(model_lock),
+                    })
+                .collect())
+            }
+        }
         };
 
         assert_eq!(expected.to_string(), result.to_string());
