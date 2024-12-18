@@ -2,7 +2,7 @@ use log::debug;
 
 use crate::generating::generate_cqrs_impl::generate_cqrs_impl;
 use crate::generating::generate_effects_enum::generate_effects_enum;
-use crate::generating::generate_errors_enum::generate_error_enum;
+use crate::generating::generate_errors_enum::generate_errors_enum;
 use crate::generating::generate_use_statement::generate_use_statement;
 use crate::generating::traits::api_traits::generate_api_traits;
 use crate::generating::traits::cqrs_traits::generate_cqrs_traits;
@@ -87,17 +87,9 @@ fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
     // let use_statements = get_use_statements(&ast);
 
     let (models_n_effect, generated_effect_enum) = generate_effects_enum(models_parsed);
+    let (models_n_efects_n_errors, generated_error_enum) = generate_errors_enum(models_n_effect);
     // TODO implement for all file paths!
-    let model_n_effect = &models_n_effect[0];
-    let (error_ident, generated_error_enum) = generate_error_enum(&model_n_effect.ast);
-    let model_n_effects_n_errors = ModelNEffectsNErrors {
-        error_ident,
-        base_path: model_n_effect.base_path.to_owned(),
-        ast: model_n_effect.ast.to_owned(),
-        domain_model_ident: model_n_effect.domain_model_ident.to_owned(),
-        effect_ident: model_n_effect.effect_ident.to_owned(),
-        effect_variants: model_n_effect.effect_variants.to_owned(),
-    };
+    let model_n_effects_n_errors = &models_n_efects_n_errors[0];
     let generated_cqrs_fns = generate_cqrs_impl(
         &model_n_effects_n_errors.domain_model_ident,
         &model_n_effects_n_errors.effect_ident,
@@ -110,7 +102,7 @@ fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
 
     let use_statements = &[model_n_effects_n_errors]
         .iter()
-        .map(|model_n_effects_n_errors: &ModelNEffectsNErrors| {
+        .map(|model_n_effects_n_errors: &&ModelNEffectsNErrors| {
             generate_use_statement(&model_n_effects_n_errors.base_path, "*")
         })
         .collect::<Vec<TokenStream>>();
