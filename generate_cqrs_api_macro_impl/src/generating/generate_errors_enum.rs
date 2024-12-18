@@ -26,6 +26,7 @@ pub(crate) fn generate_errors_enum(
                 ast: model.ast,
                 base_path: model.base_path,
                 domain_model_ident: model.domain_model_ident,
+                domain_model_lock_ident: model.domain_model_lock_ident,
                 effect_ident: model.effect_ident,
                 effect_variants: model.effect_variants,
             }
@@ -81,6 +82,7 @@ mod tests {
             base_path: BasePath("domain::model".to_string()),
             ast,
             domain_model_ident: format_ident!("MyGoodDomain"),
+            domain_model_lock_ident: format_ident!("MyGoodDomainLock"),
             effect_ident: format_ident!("MyGoodDomainEffect"),
             effect_variants: vec![],
         }]);
@@ -124,6 +126,7 @@ mod tests {
             ModelNEffects {
                 ast: ast_one,
                 domain_model_ident: format_ident!("MyGoodDomain"),
+                domain_model_lock_ident: format_ident!("MyGoodDomainLock"),
                 effect_ident: format_ident!("MyGoodDomainEffect"),
                 base_path: BasePath("domain::model".to_string()),
                 effect_variants: vec![],
@@ -131,6 +134,7 @@ mod tests {
             ModelNEffects {
                 ast: ast_two,
                 domain_model_ident: format_ident!("MySecondDomain"),
+                domain_model_lock_ident: format_ident!("MySecondDomainLock"),
                 effect_ident: format_ident!("MySecondDomainEffect"),
                 base_path: BasePath("domain::second".to_string()),
                 effect_variants: vec![],
@@ -183,6 +187,7 @@ mod tests {
             base_path: BasePath("".to_string()),
             ast,
             domain_model_ident: format_ident!("MyGoodDomain"),
+            domain_model_lock_ident: format_ident!("MyGoodDomainLock"),
             effect_ident: format_ident!("MyGoodDomainEffect"),
             effect_variants: vec![],
         }]);
@@ -216,6 +221,7 @@ mod tests {
             base_path: BasePath("".to_string()),
             ast,
             domain_model_ident: format_ident!("MyGoodDomain"),
+            domain_model_lock_ident: format_ident!("MyGoodDomainLock"),
             effect_ident: format_ident!("MyGoodDomainEffect"),
             effect_variants: vec![],
         }]);

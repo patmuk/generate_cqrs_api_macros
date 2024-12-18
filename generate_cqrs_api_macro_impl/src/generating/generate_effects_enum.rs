@@ -25,6 +25,7 @@ pub(crate) fn generate_effects_enum(
                 base_path: model_parsed.base_path.to_owned(),
                 ast: model_parsed.ast.to_owned(),
                 domain_model_ident: model_parsed.domain_model_ident.to_owned(),
+                domain_model_lock_ident: model_parsed.domain_model_lock_ident.to_owned(),
                 effect_ident: processing_effect_enum.ident,
                 effect_variants: variants,
             }
@@ -83,6 +84,7 @@ mod tests {
 
         let result = generate_effects_enum(vec![ModelParsed {
             domain_model_ident: format_ident!("MyDomainModel"),
+            domain_model_lock_ident: format_ident!("MyDomainModelLock"),
             ast: ast.clone(),
             base_path: BasePath("".to_string()),
         }]);
@@ -141,11 +143,13 @@ mod tests {
         let result = generate_effects_enum(vec![
             ModelParsed {
                 domain_model_ident: format_ident!("MyDomainModel"),
+                domain_model_lock_ident: format_ident!("MyDomainModelLock"),
                 ast: model_one.clone(),
                 base_path: BasePath("".to_string()),
             },
             ModelParsed {
                 domain_model_ident: format_ident!("MySecondModel"),
+                domain_model_lock_ident: format_ident!("MySecondModelLock"),
                 ast: model_two.clone(),
                 base_path: BasePath("".to_string()),
             },

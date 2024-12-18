@@ -18,6 +18,7 @@ pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenSt
         .iter()
         .map(|model| {
             let domain_model_ident = &model.domain_model_ident;
+            let domain_model_lock_ident = &model.domain_model_lock_ident;
             let effect_ident = &model.effect_ident;
             let effect_variants = &model.effect_variants;
             let error_ident = &model.error_ident;
@@ -42,6 +43,7 @@ pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenSt
             let generated_cqrs_queries = generate_cqrs_functions(
                 "Query",
                 domain_model_ident,
+                domain_model_lock_ident,
                 &cqrs_queries_sig_idents,
                 effect_ident,
                 effect_variants,
@@ -50,6 +52,7 @@ pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenSt
             let generated_cqrs_commands = generate_cqrs_functions(
                 "Command",
                 domain_model_ident,
+                domain_model_lock_ident,
                 &cqrs_commands_sig_idents,
                 effect_ident,
                 effect_variants,
@@ -69,6 +72,7 @@ pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenSt
 fn generate_cqrs_functions(
     cqrs_kind: &str,
     domain_model_struct_ident: &Ident,
+    domain_model_lock_ident: &Ident,
     cqrs_queries_sig_idents: &[(Ident, Vec<Ident>)],
     effect: &Ident,
     effect_variants: &[Variant],
@@ -82,10 +86,9 @@ fn generate_cqrs_functions(
             }
         }
     };
-    // hardcoded ... could be improved using traits
-    let domain_model_lock = format_ident!(
-        "{}_lock",
-        snake_case_with_sep(&domain_model_struct_ident.to_string(), "_")
+    let domain_model_lock_var = format_ident!(
+        "{}",
+        snake_case_with_sep(&domain_model_lock_ident.to_string(), "_")
     );
 
     let lhs_cqrs_call = {
@@ -100,7 +103,7 @@ fn generate_cqrs_functions(
     let rhs_cqrs_call = cqrs_queries_sig_idents.iter().map(|(ident, args)| {
         let fn_call = format_ident!("{}", snake_case_with_sep(&ident.to_string(), "_"));
         quote! {
-            #domain_model_lock. #fn_call ( #(#args),*)
+            #domain_model_lock_var. #fn_call ( #(#args),*)
         }
     });
 
@@ -167,7 +170,7 @@ fn generate_cqrs_functions(
                 lifecycle: &LifecycleImpl,
             ) -> Result<Vec<Effect>, ProcessingError> {
                 let app_state = &lifecycle.app_state;
-                let #domain_model_lock = &app_state.#domain_model_lock;
+                let #domain_model_lock_var = &app_state.#domain_model_lock_var;
                 let #result_type = match self {
                     #(#lhs_cqrs_call => #rhs_cqrs_call,)*
                 }
@@ -451,9 +454,13 @@ mod tests {
     use quote::{format_ident, quote};
     use syn::parse_str;
 
-    use crate::generating::generate_cqrs_impl::{
-        generate_cqrs_command_enum, generate_cqrs_functions, generate_cqrs_query_enum,
-        get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes, get_cqrs_functions,
+    use crate::{
+        generate_api_macro_impl::{BasePath, ModelNEffectsNErrors},
+        generating::generate_cqrs_impl::{
+            generate_cqrs_command_enum, generate_cqrs_functions, generate_cqrs_impl,
+            generate_cqrs_query_enum, get_cqrs_fns_sig_idents, get_cqrs_fns_sig_tipes,
+            get_cqrs_functions,
+        },
     };
 
     const CODE: &str = r#"
@@ -577,6 +584,85 @@ mod tests {
                     } else {
                         let item = &items[item_pos - 1];
                         Ok(vec![MyGoodDomainModelEffect::RenderItems(item.clone())])
+                   }
+                }
+            }
+        "#;
+    const CODE_SECOND_MODEL: &str = r#"
+            impl MySecondDomainModelLock {
+                pub(crate) fn copy_item(
+                    &self,
+                    item_pos: usize,
+                ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
+                    let items = &mut self.lock.blocking_write().items;
+                    if item_pos > items.len() {
+                        Err(MySecondProcessingError::ItemDoesNotExist(item_pos))
+                    } else {
+                        items.clone(item_pos - 1);
+                        Ok(true, vec![MySecondDomainModelEffect::RenderItems(model_lock.clone())])
+                    }
+                }
+            }
+            impl MySecondDomainModel {
+                pub fn get_items_as_string(&self) -> Vec<String> {
+                    self.items.iter().map(|item| item.text.clone()).collect()
+                }
+
+                pub(crate) fn add_object_2_model(
+                    &self,
+                    object: String,
+                    priority: usize,
+                ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
+                    self.lock
+                    .blocking_write()
+                    .items
+                    .push(Item { text: item });
+                    // this clone is cheap, as it is on ARC (RustAutoOpaque>T> = Arc<RwMutex<T>>)
+                    Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
+                }
+            }
+            pub struct MySecondDomainModelLock  {
+                pub lock: RustAutoOpaque<MySecondDomainMode>,
+            }
+
+            impl MySecondDomainModelLock {
+                pub fn get_objects_as_string(&self) -> Vec<String> {
+                    self.items.iter().map(|item| item.text.clone()).collect()
+                }
+
+                pub(crate) fn add_object(
+                    &self,
+                    item: String,
+                    priority: usize,
+                ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
+                    self.lock
+                    .blocking_write()
+                    .items
+                    .push(DomainItem { text: item });
+                    // this clone is cheap, as it is on ARC (RustAutoOpaque>T> = Arc<RwMutex<T>>)
+                    Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
+                }
+                pub(crate) fn clean_all_objects(
+                    &self,
+                ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
+                    self.lock.blocking_write().items.clear();
+                    Ok((true, vec![MySecondDomainModelEffect::RenderItems(self.clone())]))
+                }
+                pub(crate) fn all_objects(
+                    &self,
+                ) -> Result<Vec<MySecondDomainModelEffect>, MySecondProcessingError> {
+                    Ok(vec![MySecondDomainModelEffect::RenderItems(self.clone())])
+                }
+                pub(crate) fn query_get_object(
+                    &self,
+                    item_pos: usize,
+                ) -> Result<Vec<MySecondDomainModelEffect>, MySecondProcessingError> {
+                    let items = &self.lock.blocking_read().items;
+                    if item_pos > items.len() {
+                        Err(ItemListProcessingError::ItemDoesNotExist(item_pos))
+                    } else {
+                        let item = &items[item_pos - 1];
+                        Ok(vec![MySecondDomainModelEffect::RenderItems(item.clone())])
                    }
                 }
             }
@@ -729,9 +815,76 @@ mod tests {
     }
 
     #[test]
+    fn generate_cqrs_enum_test_two_models() {
+        let ast = syn::parse_file(CODE).expect("test oracle model one should be parsable");
+        let ast_2 =
+            syn::parse_file(CODE_SECOND_MODEL).expect("test oracle model two should be parsable");
+        let (cqrs_q, cqrs_c) = get_cqrs_functions(
+            &format_ident!("MyGoodDomainModel"),
+            &format_ident!("MyGoodDomainModelEffect"),
+            &format_ident!("MyGoodProcessingError"),
+            &ast,
+        );
+        let cqrs_q_enum = generate_cqrs_query_enum(
+            &get_cqrs_fns_sig_tipes(&cqrs_q),
+            &format_ident!("MyGoodDomainModel"),
+        );
+        let cqrs_c_enum = generate_cqrs_command_enum(
+            &get_cqrs_fns_sig_tipes(&cqrs_c),
+            &format_ident!("MyGoodDomainModel"),
+        );
+        let (cqrs_q_2, cqrs_c_2) = get_cqrs_functions(
+            &format_ident!("MySecondDomainModel"),
+            &format_ident!("MySecondDomainModelEffect"),
+            &format_ident!("MySecondProcessingError"),
+            &ast_2,
+        );
+        let cqrs_q_enum_2 = generate_cqrs_query_enum(
+            &get_cqrs_fns_sig_tipes(&cqrs_q_2),
+            &format_ident!("MySecondDomainModel"),
+        );
+        let cqrs_c_enum_2 = generate_cqrs_command_enum(
+            &get_cqrs_fns_sig_tipes(&cqrs_c_2),
+            &format_ident!("MySecondDomainModel"),
+        );
+        let result = quote! {
+            #cqrs_q_enum
+            #cqrs_c_enum
+            #cqrs_q_enum_2
+            #cqrs_c_enum_2
+        };
+        let expected = quote! {
+            #[derive(Debug)]
+            pub enum MyGoodDomainModelQuery {
+                AllItems,
+                GetItem(usize)
+            }
+            #[derive(Debug)]
+            pub enum MyGoodDomainModelCommand  {
+                AddItem(String, usize),
+                CleanList,
+                RemoveItem(usize)
+            }
+            #[derive(Debug)]
+            pub enum MySecondDomainModelQuery {
+                AllObjects,
+                GetObject(usize)
+            }
+            #[derive(Debug)]
+            pub enum MySecondDomainModelCommand {
+                AddObject(String, usize),
+                CleanAllObjects,
+                CopyItem(usize)
+            }
+        };
+        assert_eq!(expected.to_string(), result.to_string());
+    }
+
+    #[test]
     fn generate_cqrs_fns_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
         let domain_model_struct_ident = format_ident!("MyGoodDomainModel");
+        let domain_model_lock_ident = format_ident!("MyGoodDomainModelLock");
         let processing_error = format_ident!("MyGoodProcessingError");
         let effect_code = parse_str::<syn::ItemEnum>(
             r#"pub enum MyGoodDomainModelEffect {
@@ -757,6 +910,7 @@ mod tests {
         let cqrs_queries = generate_cqrs_functions(
             "Query",
             &domain_model_struct_ident,
+            &domain_model_lock_ident,
             &get_cqrs_fns_sig_idents(&cqrs_q),
             &effect_ident,
             &effect_variants,
@@ -765,6 +919,7 @@ mod tests {
         let cqrs_commands = generate_cqrs_functions(
             "Command",
             &domain_model_struct_ident,
+            &domain_model_lock_ident,
             &get_cqrs_fns_sig_idents(&cqrs_c),
             &effect_ident,
             &effect_variants,
@@ -773,6 +928,134 @@ mod tests {
         let result = quote! {
            #cqrs_queries
            #cqrs_commands
+        };
+
+        let expected = quote! {
+            impl Cqrs for MyGoodDomainModelQuery {
+                fn process (self) -> Result < Vec < Effect > , ProcessingError > {
+                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
+                }
+            }
+            impl MyGoodDomainModelQuery {
+                fn process_with_lifecycle(
+                    self,
+                    lifecycle: &LifecycleImpl,
+                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let app_state = &lifecycle.app_state;
+                    let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
+                    let result = match self {
+                        MyGoodDomainModelQuery::AllItems => my_good_domain_model_lock.all_items(),
+                        MyGoodDomainModelQuery::GetItem(item_pos) => my_good_domain_model_lock.query_get_item(item_pos),
+                    }.map_err(ProcessingError::MyGoodProcessingError)?;
+                    Ok(result
+                        .into_iter()
+                        .map(|effect| match effect {
+                            MyGoodDomainModelEffect::RenderItemList(model_lock) =>
+                                Effect::MyGoodDomainModelRenderItemList(model_lock),
+                            MyGoodDomainModelEffect::RenderItem(item) =>
+                                Effect::MyGoodDomainModelRenderItem(item),
+                            MyGoodDomainModelEffect::RenderMyGoodDomainModel(model_lock) =>
+                                Effect::MyGoodDomainModelRenderMyGoodDomainModel(model_lock)
+                        , })
+                        .collect())
+                    }
+                }
+            impl Cqrs for MyGoodDomainModelCommand {
+                fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
+                }
+            }
+            impl MyGoodDomainModelCommand {
+                fn process_with_lifecycle(
+                    self,
+                    lifecycle: &LifecycleImpl,
+                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let app_state = &lifecycle.app_state;
+                    let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
+                    let (state_changed, result) = match self {
+                        MyGoodDomainModelCommand::AddItem(item, priority) => my_good_domain_model_lock.add_item(item, priority),
+                        MyGoodDomainModelCommand::CleanList => my_good_domain_model_lock.command_clean_list(),
+                        MyGoodDomainModelCommand::RemoveItem(item_pos) => my_good_domain_model_lock.remove_item(item_pos) ,
+                    }
+                    .map_err(ProcessingError::MyGoodProcessingError)?;
+                    if state_changed {
+                        app_state.mark_dirty();
+                        lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                    }
+                    Ok(result
+                    .into_iter()
+                    .map(|effect| match effect {
+                        MyGoodDomainModelEffect::RenderItemList(model_lock) =>
+                        Effect::MyGoodDomainModelRenderItemList(model_lock),
+                        MyGoodDomainModelEffect::RenderItem(item) => Effect::MyGoodDomainModelRenderItem(item),
+                        MyGoodDomainModelEffect::RenderMyGoodDomainModel(model_lock) => Effect::MyGoodDomainModelRenderMyGoodDomainModel(model_lock)
+                    , })
+                    .collect())
+                }
+            }
+        };
+
+        assert_eq!(expected.to_string(), result.to_string());
+    }
+
+    #[test]
+    fn generate_cqrs_impl_test_two_models() {
+        let ast = syn::parse_file(CODE).expect("test oracle for model one should be parsable");
+        let ast_2 = syn::parse_file(CODE).expect("test oracle for model two should be parsable");
+
+        let effect_code = parse_str::<syn::ItemEnum>(
+            r#"pub enum MyGoodDomainModelEffect {
+                RenderItemList(model_lock),
+                RenderItem(item),
+                RenderMyGoodDomainModel(model_lock) 
+            }
+            "#,
+        )
+        .expect("Couldn't parse test oracle!");
+        let effect_code_2 = parse_str::<syn::ItemEnum>(
+            r#"pub enum MySecondDomainModelEffect {
+                RenderItems(model_lock),
+                RenderItem(item),
+                RenderMySecondDomainModel(model_lock) 
+            }
+            "#,
+        )
+        .expect("Couldn't parse test oracle!");
+        let effect_variants: Vec<syn::Variant> = effect_code
+            .variants
+            .into_pairs()
+            .map(|pair| pair.value().clone())
+            .collect();
+        let effect_variants_2: Vec<syn::Variant> = effect_code_2
+            .variants
+            .into_pairs()
+            .map(|pair| pair.value().clone())
+            .collect();
+
+        let models = vec![
+            ModelNEffectsNErrors {
+                base_path: BasePath("domain::model".to_string()),
+                ast,
+                domain_model_ident: format_ident!("MyGoodDomainModel"),
+                domain_model_lock_ident: format_ident!("MyGoodDomainModelLock"),
+                effect_ident: effect_code.ident,
+                effect_variants,
+                error_ident: format_ident!("MyGoodProcessingError"),
+            },
+            ModelNEffectsNErrors {
+                base_path: BasePath("domain::other".to_string()),
+                ast: ast_2,
+                domain_model_ident: format_ident!("MySecondDomainModel"),
+                domain_model_lock_ident: format_ident!("MySecondDomainModelLock"),
+                effect_ident: effect_code_2.ident,
+                effect_variants: effect_variants_2,
+                error_ident: format_ident!("MySecondProcessingError"),
+            },
+        ];
+
+        let generated_cqrs = generate_cqrs_impl(&models);
+        let result = quote! {
+            #(#generated_cqrs)*
         };
 
         let expected = quote! {
