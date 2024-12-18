@@ -47,8 +47,8 @@ pub(crate) fn generate_errors_enum(
             #(#use_statements)*
             #[derive(thiserror::Error, Debug)]
             pub enum ProcessingError {
-                #[error("Error during processing: {0}")]
-                #(#processing_errors ( #processing_errors ),)*
+                #(  #[error("Error during processing: {0}")]
+                    #processing_errors ( #processing_errors ),)*
                 #[error("Processing was fine, but state could not be persisted: {0}")]
                 NotPersisted(#[source] std::io::Error),
             }
@@ -147,6 +147,7 @@ mod tests {
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
                 MyGoodProcessingError(MyGoodProcessingError),
+                #[error("Error during processing: {0}")]
                 MySecondProcessingError(MySecondProcessingError),
                 #[error("Processing was fine, but state could not be persisted: {0}")]
                 NotPersisted(#[source] std::io::Error),
