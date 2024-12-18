@@ -409,7 +409,7 @@ fn get_cqrs_functions(
         panic!(
             r#"Did not find a single cqrs-function! Be sure to implement them like:
             impl {domain_model_lock_struct_ident}{{
-                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(StateChanged, Vec<{effect}), {processing_error}>>{{...}}
+                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(StateChanged, Vec<{effect}>), {processing_error}> {{...}}
             }}
             "#
         )
@@ -730,7 +730,7 @@ mod tests {
     #[test]
     #[should_panic = "Did not find a single cqrs-function! Be sure to implement them like:
             impl SomeModelLock{
-                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(StateChanged, Vec<SomeModelEffect), SomeModelError>>{...}
+                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(StateChanged, Vec<SomeModelEffect>), SomeModelError> {...}
             }"]
     fn get_cqrs_fns_fail_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
