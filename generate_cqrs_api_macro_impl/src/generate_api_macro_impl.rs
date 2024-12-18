@@ -176,7 +176,7 @@ mod tests {
             pub trait Cqrs: std::fmt::Debug {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError>;
             }
-
+            use crate::good_source_file::MyGoodProcessingError;
             #[derive(thiserror :: Error, Debug)]
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]

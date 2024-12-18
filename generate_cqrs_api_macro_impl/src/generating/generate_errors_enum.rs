@@ -7,6 +7,8 @@ use crate::generate_api_macro_impl::ModelNEffects;
 use crate::generate_api_macro_impl::ModelNEffectsNErrors;
 use crate::parsing::get_enum::get_enum_type_by_ident_keyword;
 
+use super::generate_use_statement::generate_use_statement;
+
 pub(crate) fn generate_errors_enum(
     models_n_effects: Vec<ModelNEffects>,
 ) -> (Vec<ModelNEffectsNErrors>, TokenStream) {
@@ -30,22 +32,22 @@ pub(crate) fn generate_errors_enum(
         })
         .collect();
 
-    // we are importing * from the base path, so this is imported already
-    // otherwise, we need to know which Error belongs to which Model of which base path
-    // let use_statement = generate_use_statement(base_path, &processing_error_enum.to_string());
-
-    let processing_error = models_n_effects_n_errors
+    let use_statements = models_n_effects_n_errors
+        .iter()
+        .map(|model| generate_use_statement(&model.base_path, &model.error_ident.to_string()))
+        .collect::<Vec<TokenStream>>();
+    let processing_errors = models_n_effects_n_errors
         .iter()
         .map(|model| model.error_ident.clone())
         .collect::<Vec<Ident>>();
     (
         models_n_effects_n_errors,
         quote! {
-            // #use_statement
+            #(#use_statements)*
             #[derive(thiserror::Error, Debug)]
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
-                #(#processing_error ( #processing_error ),)*
+                #(#processing_errors ( #processing_errors ),)*
                 #[error("Processing was fine, but state could not be persisted: {0}")]
                 NotPersisted(#[source] std::io::Error),
             }
@@ -76,13 +78,14 @@ mod tests {
         .expect("test oracle should be parsable");
 
         let result = generate_errors_enum(vec![ModelNEffects {
-            base_path: BasePath("".to_string()),
+            base_path: BasePath("domain::model".to_string()),
             ast,
             domain_model_ident: format_ident!("MyGoodDomain"),
             effect_ident: format_ident!("MyGoodDomainEffect"),
             effect_variants: vec![],
         }]);
         let expected_code = quote! {
+            use domain::model::MyGoodProcessingError;
             #[derive(thiserror::Error, Debug)]
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
@@ -122,18 +125,20 @@ mod tests {
                 ast: ast_one,
                 domain_model_ident: format_ident!("MyGoodDomain"),
                 effect_ident: format_ident!("MyGoodDomainEffect"),
-                base_path: BasePath("".to_string()),
+                base_path: BasePath("domain::model".to_string()),
                 effect_variants: vec![],
             },
             ModelNEffects {
                 ast: ast_two,
                 domain_model_ident: format_ident!("MySecondDomain"),
                 effect_ident: format_ident!("MySecondDomainEffect"),
-                base_path: BasePath("".to_string()),
+                base_path: BasePath("domain::second".to_string()),
                 effect_variants: vec![],
             },
         ]);
         let expected_code = quote! {
+            use domain::model::MyGoodProcessingError ;
+            use domain::second::MySecondProcessingError ;
             #[derive(thiserror::Error, Debug)]
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
