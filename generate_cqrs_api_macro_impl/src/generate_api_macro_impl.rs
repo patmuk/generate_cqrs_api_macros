@@ -17,22 +17,24 @@ use syn::{Ident, Result, Variant};
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct BasePath(pub(crate) String);
 #[derive(Debug, PartialEq, Clone)]
-pub(crate) struct SourceCode(pub(crate) String);
+pub(crate) struct SourceCodeString(pub(crate) String);
 
 pub(crate) struct ParsedFiles {
     pub(crate) base_path: BasePath,
-    pub(crate) source_code: SourceCode,
+    pub(crate) source_code: SourceCodeString,
 }
 pub(crate) struct ModelParsed {
     pub(crate) base_path: BasePath,
     pub(crate) ast: syn::File,
     pub(crate) domain_model_ident: Ident,
+    pub(crate) domain_model_lock_ident: Ident,
 }
 
 pub(crate) struct ModelNEffects {
     pub(crate) base_path: BasePath,
     pub(crate) ast: syn::File,
     pub(crate) domain_model_ident: Ident,
+    pub(crate) domain_model_lock_ident: Ident,
     pub(crate) effect_ident: Ident,
     pub(crate) effect_variants: Vec<Variant>,
 }
@@ -40,6 +42,7 @@ pub(crate) struct ModelNEffectsNErrors {
     pub(crate) base_path: BasePath,
     pub(crate) ast: syn::File,
     pub(crate) domain_model_ident: Ident,
+    pub(crate) domain_model_lock_ident: Ident,
     pub(crate) effect_ident: Ident,
     pub(crate) effect_variants: Vec<Variant>,
     pub(crate) error_ident: Ident,
@@ -80,7 +83,7 @@ fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
             "Couldn't extract the domaModelel lock's name. One Struct needs to derive CqrsModelLock.",
         );
         debug!("domain model lock name: {:#?}", domain_model_lock_ident);
-        ModelParsed{base_path : parsed_file.base_path, ast, domain_model_ident: domain_model_ident.to_owned()}
+        ModelParsed{base_path : parsed_file.base_path, ast, domain_model_ident: domain_model_ident.to_owned(), domain_model_lock_ident: domain_model_lock_ident.to_owned() }
     }).collect();
     // take all imports, just in case they are used in the generated code (like RustAutoOpaque)
     // => not needed. If needed later, remove import to generated traits!

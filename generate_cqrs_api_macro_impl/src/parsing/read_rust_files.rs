@@ -3,7 +3,7 @@ use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::Result;
 
 use crate::{
-    generate_api_macro_impl::{ParsedFiles, SourceCode},
+    generate_api_macro_impl::{ParsedFiles, SourceCodeString},
     parsing::file_location_2_base_path::file_location_2_base_path,
 };
 
@@ -52,7 +52,7 @@ pub(crate) fn read_rust_file_content(
                 trace!("File content:\n{}", source);
                 let base_path = file_location_2_base_path(file_path);  // Assuming this function exists
                 debug!("Base path is: {:#?}", base_path);
-                ParsedFiles{ base_path, source_code: SourceCode(source)}
+                ParsedFiles{ base_path, source_code: SourceCodeString(source)}
             })
         }).collect()
 
