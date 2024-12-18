@@ -268,6 +268,221 @@ mod tests {
     }
 
     #[test]
+    fn generate_all_from_two_files_test() {
+        let expected = quote! {
+                    use crate::good_source_file::*;
+                    use crate::second_model_file::*;
+                    use log::debug;
+                    use std::path::PathBuf;
+                    pub trait Lifecycle {
+                        #[doc = r" the app config is to be set only once, and read afterwards. If mutation is needed wrapp it into a lock for concurrent write access"]
+                        #[doc = r" to avoid an illegal state (app state not loaded) we do the setup and init in one go"]
+                        #[doc = r" get the instance with get()"]
+                        fn new(path: Option<String>) -> &'static Self;
+                        fn get_singleton() -> &'static Self;
+                        fn app_config(&self) -> &impl AppConfig;
+                        fn app_state(&self) -> &impl AppState;
+                        #[doc = r" call to initialize the app."]
+                        #[doc = r" loads the app's state, which can be io-heavy"]
+                        fn init<AC: AppConfig, AS: AppState>(app_config: &AC) -> AS {
+                            debug!("Initializing app with config: {:?}", app_config);
+                            AppState::load_or_new(app_config)
+                        }
+                        fn persist(&self) -> Result<(), std::io::Error>;
+                        fn shutdown(&self) -> Result<(), std::io::Error>;
+                    }
+                    pub trait AppConfig: Default + std::fmt::Debug {
+                        #[doc = r" call to overwrite default values."]
+                        #[doc = r" Doesn't trigger initialization."]
+                        fn new(path: Option<String>) -> Self;
+                        fn get_app_state_file_path(&self) -> &std::path::PathBuf;
+                    }
+                    pub trait AppState {
+                        fn load_or_new<A: AppConfig>(app_config: &A) -> Self
+                        where
+                            Self: Sized;
+                        #[allow(clippy::ptr_arg)]
+                        fn persist_to_path(&self, path: &PathBuf) -> Result<(), std::io::Error>;
+                        fn dirty_flag_value(&self) -> bool;
+                        fn mark_dirty(&self);
+                    }
+                    pub(crate) trait CqrsModel: std::marker::Sized + Default {
+                        fn new() -> Self {
+                            Self::default()
+                        }
+                    }
+                    pub(crate) trait CqrsModelLock<CqrsModel>:
+                        Default + From<CqrsModel> + std::marker::Sized + Clone
+                    {
+                        fn new() -> Self {
+                            Self::default()
+                        }
+                    }
+                    pub trait Cqrs: std::fmt::Debug {
+                        fn process(self) -> Result<Vec<Effect>, ProcessingError>;
+                    }
+                    use crate::good_source_file::MyGoodProcessingError;
+                    use crate::second_model_file::MySecondDomainProcessingError;
+                    #[derive(thiserror :: Error, Debug)]
+                    pub enum ProcessingError {
+                        #[error("Error during processing: {0}")]
+                        MyGoodProcessingError(MyGoodProcessingError),
+                        MySecondDomainProcessingError(MySecondDomainProcessingError),
+                        #[error("Processing was fine, but state could not be persisted: {0}")]
+                        NotPersisted(#[source] std::io::Error),
+                    }
+                    pub enum Effect {
+                        MyGoodDomainModelRenderItems(MyGoodDomainModelLock),
+                        MySecondDomainModelRenderItems(MySecondDomainModelLock),
+                        MySecondDomainModelAlert
+                    }
+                    #[derive(Debug)]
+                    pub enum MyGoodDomainModelQuery {
+                        GetAllItems
+                    }
+                    #[derive(Debug)]
+                    pub enum MyGoodDomainModelCommand {
+                        AddItem(String),
+                        CleanList,
+                        RemoveItem(usize)
+                    }
+
+                    impl Cqrs for MyGoodDomainModelQuery {
+                        fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                            self.process_with_lifecycle(LifecycleImpl::get_singleton())
+                        }
+                    }
+                    impl MyGoodDomainModelQuery {
+                        fn process_with_lifecycle(
+                            self,
+                            lifecycle: &LifecycleImpl,
+                        ) -> Result<Vec<Effect>, ProcessingError> {
+                            let app_state = &lifecycle.app_state;
+                            let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
+                            let result = match self {
+                                MyGoodDomainModelQuery::GetAllItems => my_good_domain_model_lock.get_all_items(),
+                            }
+                            .map_err(ProcessingError::MyGoodProcessingError)?;
+                            Ok(result
+                            .into_iter()
+                            .map(|effect| match effect {
+                                MyGoodDomainModelEffect::RenderItems(my_good_domain_model_lock) =>
+                                    Effect::MyGoodDomainModelRenderItems(my_good_domain_model_lock) ,
+                            })
+                            .collect())
+                        }
+                    }
+                    impl Cqrs for MyGoodDomainModelCommand {
+                        fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                            self.process_with_lifecycle(LifecycleImpl::get_singleton())
+                        }
+                    }
+                    impl MyGoodDomainModelCommand {
+                        fn process_with_lifecycle(
+                            self,
+                            lifecycle: &LifecycleImpl,
+                        ) -> Result<Vec<Effect>, ProcessingError> {
+                            let app_state = &lifecycle.app_state;
+                            let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
+                            let (state_changed, result) = match self {
+                                MyGoodDomainModelCommand::AddItem(item) => my_good_domain_model_lock.add_item(item),
+                                MyGoodDomainModelCommand::CleanList => my_good_domain_model_lock.clean_list(),
+                                MyGoodDomainModelCommand::RemoveItem(todo_pos) =>
+                                    my_good_domain_model_lock.remove_item(todo_pos),
+                            }
+                            .map_err(ProcessingError::MyGoodProcessingError)?;
+                            if state_changed {
+                                app_state.mark_dirty();
+                                lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                            }
+                            Ok(result
+                                .into_iter()
+                                .map(|effect| match effect {
+                                    MyGoodDomainModelEffect::RenderItems(my_good_domain_model_lock) =>
+                                        Effect::MyGoodDomainModelRenderItems(my_good_domain_model_lock),
+                                })
+                                .collect())
+                        }
+                    }
+                    #[derive(Debug)]
+        pub enum MySecondDomainModelQuery {
+            GetAllItems
+        }
+        #[derive(Debug)]
+        pub enum MySecondDomainModelCommand {
+            AddSecondItem(String),
+            CleanList,
+            ReplaceItem(usize)
+        }
+        impl Cqrs for MySecondDomainModelQuery {
+            fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                self.process_with_lifecycle(LifecycleImpl::get_singleton())
+            }
+        }
+        impl MySecondDomainModelQuery {
+            fn process_with_lifecycle(
+                self,
+                lifecycle: &LifecycleImpl,
+            ) -> Result<Vec<Effect>, ProcessingError> {
+                let app_state = &lifecycle.app_state;
+                let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
+                let result = match self {
+                    MySecondDomainModelQuery::GetAllItems => my_second_domain_model_lock.get_all_items(),
+                }
+                .map_err(ProcessingError::MySecondDomainProcessingError)?;
+                Ok(result
+                    .into_iter()
+                    .map(|effect| match effect {
+                        MySecondDomainModelEffect::RenderItems(my_second_domain_model_lock) =>
+                        Effect::MySecondDomainModelRenderItems(my_second_domain_model_lock),
+                        MySecondDomainModelEffect::Alert => Effect::MySecondDomainModelAlert,
+                    })
+                    .collect())
+            }
+        }
+        impl Cqrs for MySecondDomainModelCommand {
+            fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                self.process_with_lifecycle(LifecycleImpl::get_singleton())
+            }
+        }
+        impl MySecondDomainModelCommand {
+            fn process_with_lifecycle(
+                self,
+                lifecycle: &LifecycleImpl,
+            ) -> Result<Vec<Effect>, ProcessingError> {
+                let app_state = &lifecycle.app_state;
+                let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
+                let (state_changed, result) = match self {
+                    MySecondDomainModelCommand::AddSecondItem(item) => my_second_domain_model_lock.add_second_item(item),
+                    MySecondDomainModelCommand::CleanList => my_second_domain_model_lock.clean_list(),
+                    MySecondDomainModelCommand::ReplaceItem(todo_pos) => my_second_domain_model_lock.replace_item(todo_pos),
+                }
+                .map_err(ProcessingError::MySecondDomainProcessingError)?;
+                if state_changed {
+                    app_state.mark_dirty();
+                    lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                }
+                Ok(result
+                    .into_iter()
+                    .map(|effect| match effect {
+                        MySecondDomainModelEffect::RenderItems(my_second_domain_model_lock) => Effect::MySecondDomainModelRenderItems(my_second_domain_model_lock),
+                        MySecondDomainModelEffect::Alert => Effect::MySecondDomainModelAlert,
+                    })
+                    .collect())
+            }
+        }
+        };
+        // let (use_statements, content) =
+        let paths_n_codes = read_rust_file_content(vec![
+            "../tests/good_source_file/mod.rs".to_string(),
+            "../tests/second_model_file/mod.rs".to_string(),
+        ])
+        .expect("Could not read test oracle file: ");
+        let result = generate_code(paths_n_codes).unwrap();
+        assert_eq!(expected.to_string(), result.to_string());
+    }
+
+    #[test]
     #[should_panic(
         expected = "At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]"
     )]
