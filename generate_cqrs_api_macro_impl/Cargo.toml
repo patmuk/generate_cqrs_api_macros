@@ -10,8 +10,8 @@ simple_logger = "5.0.0"
 proc-macro2 = "1.0.88"
 # extra-traits feature adds #[derive(Debug)], but slows down the compilation time
 # so, only enable this while debugging!
-syn = {version = "2.0.79", features = ["full", "extra-traits"]}
-# syn = {version = "2.0.79", features = ["full"]}
+# syn = {version = "2.0.79", features = ["full", "extra-traits"]}
+syn = {version = "2.0.79", features = ["full"]}
 quote = "1.0.37"
 stringcase = "0.3.0"
 
