@@ -88,21 +88,13 @@ fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
 
     let (models_n_effect, generated_effect_enum) = generate_effects_enum(models_parsed);
     let (models_n_efects_n_errors, generated_error_enum) = generate_errors_enum(models_n_effect);
-    // TODO implement for all file paths!
-    let model_n_effects_n_errors = &models_n_efects_n_errors[0];
-    let generated_cqrs_fns = generate_cqrs_impl(
-        &model_n_effects_n_errors.domain_model_ident,
-        &model_n_effects_n_errors.effect_ident,
-        &model_n_effects_n_errors.effect_variants,
-        &model_n_effects_n_errors.error_ident,
-        &model_n_effects_n_errors.ast,
-    );
+    let generated_cqrs_fns = &generate_cqrs_impl(&models_n_efects_n_errors);
     let generated_api_traits = generate_api_traits();
     let generated_cqrs_traits = generate_cqrs_traits();
 
-    let use_statements = &[model_n_effects_n_errors]
+    let use_statements = models_n_efects_n_errors
         .iter()
-        .map(|model_n_effects_n_errors: &&ModelNEffectsNErrors| {
+        .map(|model_n_effects_n_errors: &ModelNEffectsNErrors| {
             generate_use_statement(&model_n_effects_n_errors.base_path, "*")
         })
         .collect::<Vec<TokenStream>>();
@@ -113,7 +105,7 @@ fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
         #generated_cqrs_traits
         #generated_error_enum
         #generated_effect_enum
-        #generated_cqrs_fns
+        #(#generated_cqrs_fns)*
     };
     debug!(
         "generated code:\n----------------------------------------------------------------------------------------\n{:}\n----------------------------------------------------------------------------------------\n",

@@ -10,51 +10,60 @@ use syn::Ident;
 use syn::ImplItemFn;
 use syn::Variant;
 
+use crate::generate_api_macro_impl::ModelNEffectsNErrors;
 use crate::parsing::type_2_ident::{get_ident, get_path, get_type_name};
 
-pub(crate) fn generate_cqrs_impl(
-    domain_model_struct_ident: &Ident,
-    effect: &Ident,
-    effect_variants: &[Variant],
-    processing_error: &Ident,
-    ast: &File,
-) -> TokenStream {
-    let (cqrs_queries, cqrs_commands) =
-        get_cqrs_functions(domain_model_struct_ident, effect, processing_error, ast);
+pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenStream> {
+    models
+        .iter()
+        .map(|model| {
+            let domain_model_ident = &model.domain_model_ident;
+            let effect_ident = &model.effect_ident;
+            let effect_variants = &model.effect_variants;
+            let error_ident = &model.error_ident;
 
-    let cqrs_queries_sig_tipes = get_cqrs_fns_sig_tipes(&cqrs_queries);
-    let cqrs_commands_sig_tipes = get_cqrs_fns_sig_tipes(&cqrs_commands);
-    let cqrs_queries_sig_idents = get_cqrs_fns_sig_idents(&cqrs_queries);
-    let cqrs_commands_sig_idents = get_cqrs_fns_sig_idents(&cqrs_commands);
+            let (cqrs_queries, cqrs_commands) = get_cqrs_functions(
+                domain_model_ident,
+                effect_ident,
+                &model.error_ident,
+                &model.ast,
+            );
 
-    let generated_cqrs_query_enum =
-        generate_cqrs_query_enum(&cqrs_queries_sig_tipes, domain_model_struct_ident);
-    let generated_cqrs_command_enum =
-        generate_cqrs_command_enum(&cqrs_commands_sig_tipes, domain_model_struct_ident);
+            let cqrs_queries_sig_tipes = get_cqrs_fns_sig_tipes(&cqrs_queries);
+            let cqrs_commands_sig_tipes = get_cqrs_fns_sig_tipes(&cqrs_commands);
+            let cqrs_queries_sig_idents = get_cqrs_fns_sig_idents(&cqrs_queries);
+            let cqrs_commands_sig_idents = get_cqrs_fns_sig_idents(&cqrs_commands);
 
-    let generated_cqrs_queries = generate_cqrs_functions(
-        "Query",
-        domain_model_struct_ident,
-        &cqrs_queries_sig_idents,
-        effect,
-        effect_variants,
-        processing_error,
-    );
-    let generated_cqrs_commands = generate_cqrs_functions(
-        "Command",
-        domain_model_struct_ident,
-        &cqrs_commands_sig_idents,
-        effect,
-        effect_variants,
-        processing_error,
-    );
+            let generated_cqrs_query_enum =
+                generate_cqrs_query_enum(&cqrs_queries_sig_tipes, domain_model_ident);
+            let generated_cqrs_command_enum =
+                generate_cqrs_command_enum(&cqrs_commands_sig_tipes, domain_model_ident);
 
-    quote! {
-        #generated_cqrs_query_enum
-        #generated_cqrs_command_enum
-        #generated_cqrs_queries
-        #generated_cqrs_commands
-    }
+            let generated_cqrs_queries = generate_cqrs_functions(
+                "Query",
+                domain_model_ident,
+                &cqrs_queries_sig_idents,
+                effect_ident,
+                effect_variants,
+                error_ident,
+            );
+            let generated_cqrs_commands = generate_cqrs_functions(
+                "Command",
+                domain_model_ident,
+                &cqrs_commands_sig_idents,
+                effect_ident,
+                effect_variants,
+                error_ident,
+            );
+
+            quote! {
+                #generated_cqrs_query_enum
+                #generated_cqrs_command_enum
+                #generated_cqrs_queries
+                #generated_cqrs_commands
+            }
+        })
+        .collect::<Vec<TokenStream>>()
 }
 
 fn generate_cqrs_functions(
