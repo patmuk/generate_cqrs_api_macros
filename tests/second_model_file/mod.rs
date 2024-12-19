@@ -53,7 +53,7 @@ impl MySecondDomainModelLock {
     pub(crate) fn add_second_item(
         &self,
         item: String,
-    ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondDomainProcessingError> {
+    ) -> Result<(bool, Vec<MySecondDomainModelEffect>), MySecondDomainProcessingError> {
         self.lock
             .blocking_write()
             .items
@@ -67,7 +67,7 @@ impl MySecondDomainModelLock {
     pub(crate) fn replace_item(
         &self,
         todo_pos: usize,
-    ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondDomainProcessingError> {
+    ) -> Result<(bool, Vec<MySecondDomainModelEffect>), MySecondDomainProcessingError> {
         let items = &mut self.lock.blocking_write().items;
         if todo_pos > items.len() {
             Err(MySecondDomainProcessingError::ItemDoesNotExist(todo_pos))
@@ -78,7 +78,7 @@ impl MySecondDomainModelLock {
     }
     pub(crate) fn clean_list(
         &self,
-    ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondDomainProcessingError> {
+    ) -> Result<(bool, Vec<MySecondDomainModelEffect>), MySecondDomainProcessingError> {
         self.lock.blocking_write().items.clear();
         Ok((
             true,

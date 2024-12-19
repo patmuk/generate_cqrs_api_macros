@@ -380,12 +380,13 @@ fn get_cqrs_functions(
                             let vec_effect = type_tuple_iter.next();
                             if type_tuple_iter.next().is_some() {
                                 acc
-                            } else if state_changed.is_some_and(|tipe| {
-                                get_ident(tipe).is_ok_and(|i| i == "StateChanged")
-                            }) && vec_effect.is_some_and(|tipe| {
-                                get_path(tipe)
-                                    .is_ok_and(|path| match_vec_effect(&path.segments, effect))
-                            }) {
+                            } else if state_changed
+                                .is_some_and(|tipe| get_ident(tipe).is_ok_and(|i| i == "bool"))
+                                && vec_effect.is_some_and(|tipe| {
+                                    get_path(tipe)
+                                        .is_ok_and(|path| match_vec_effect(&path.segments, effect))
+                                })
+                            {
                                 acc.1.push(impl_fn.to_owned());
                                 acc
                             } else {
@@ -409,8 +410,10 @@ fn get_cqrs_functions(
         panic!(
             r#"Did not find a single cqrs-function! Be sure to implement them like:
             impl {domain_model_lock_struct_ident}{{
-                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(StateChanged, Vec<{effect}>), {processing_error}> {{...}}
+                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(bool, Vec<{effect}>), {processing_error}> {{...}}
             }}
+
+            where 'bool' indicates if the state changed. If bool is present, we assume a CQRS-Command, otherwise a CQRS-Query.
             "#
         )
     }
@@ -514,7 +517,7 @@ mod tests {
                 pub(crate) fn remove_item(
                     &self,
                     item_pos: usize,
-                ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
                     let items = &mut self.lock.blocking_write().items;
                     if item_pos > items.len() {
                         Err(MyGoodProcessingError::ItemDoesNotExist(item_pos))
@@ -533,7 +536,7 @@ mod tests {
                     &self,
                     item: String,
                     priority: usize,
-                ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
                     self.lock
                     .blocking_write()
                     .items
@@ -555,7 +558,7 @@ mod tests {
                     &self,
                     item: String,
                     priority: usize,
-                ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
                     self.lock
                     .blocking_write()
                     .items
@@ -565,7 +568,7 @@ mod tests {
                 }
                 pub(crate) fn command_clean_list(
                     &self,
-                ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
                     self.lock.blocking_write().items.clear();
                     Ok((true, vec![MyGoodDomainModelEffect::RenderItems(self.clone())]))
                 }
@@ -593,7 +596,7 @@ mod tests {
                 pub(crate) fn copy_item(
                     &self,
                     item_pos: usize,
-                ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
+                ) -> Result<(bool, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
                     let items = &mut self.lock.blocking_write().items;
                     if item_pos > items.len() {
                         Err(MySecondProcessingError::ItemDoesNotExist(item_pos))
@@ -612,7 +615,7 @@ mod tests {
                     &self,
                     object: String,
                     priority: usize,
-                ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
+                ) -> Result<(bool, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
                     self.lock
                     .blocking_write()
                     .items
@@ -634,7 +637,7 @@ mod tests {
                     &self,
                     item: String,
                     priority: usize,
-                ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
+                ) -> Result<(bool, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
                     self.lock
                     .blocking_write()
                     .items
@@ -644,7 +647,7 @@ mod tests {
                 }
                 pub(crate) fn clean_all_objects(
                     &self,
-                ) -> Result<(StateChanged, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
+                ) -> Result<(bool, Vec<MySecondDomainModelEffect>), MySecondProcessingError> {
                     self.lock.blocking_write().items.clear();
                     Ok((true, vec![MySecondDomainModelEffect::RenderItems(self.clone())]))
                 }
@@ -702,20 +705,20 @@ mod tests {
                 &self,
                 item: String,
                 priority: usize,
-            ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+            ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
                 self.lock.blocking_write().items.push(DomainItem { text: item });
                 Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
             }
             pub(crate) fn command_clean_list(
                 &self,
-            ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+            ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
                 self.lock.blocking_write().items.clear();
                 Ok((true, vec![MyGoodDomainModelEffect::RenderItems(self.clone())]))
             }
             pub(crate) fn remove_item(
                 &self,
                 item_pos: usize,
-            ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+            ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
                 let items = &mut self.lock.blocking_write().items;
                 if item_pos > items.len() {
                     Err(MyGoodProcessingError::ItemDoesNotExist(item_pos))
@@ -730,8 +733,11 @@ mod tests {
     #[test]
     #[should_panic = "Did not find a single cqrs-function! Be sure to implement them like:
             impl SomeModelLock{
-                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(StateChanged, Vec<SomeModelEffect>), SomeModelError> {...}
-            }"]
+                fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(bool, Vec<SomeModelEffect>), SomeModelError> {...}
+            }
+
+            where 'bool' indicates if the state changed. If bool is present, we assume a CQRS-Command, otherwise a CQRS-Query.
+            "]
     fn get_cqrs_fns_fail_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
         let (cqrs_queries, cqrs_commands) = get_cqrs_functions(

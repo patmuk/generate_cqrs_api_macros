@@ -327,6 +327,7 @@ mod tests {
                     pub enum ProcessingError {
                         #[error("Error during processing: {0}")]
                         MyGoodProcessingError(MyGoodProcessingError),
+                        #[error("Error during processing: {0}")]
                         MySecondDomainProcessingError(MySecondDomainProcessingError),
                         #[error("Processing was fine, but state could not be persisted: {0}")]
                         NotPersisted(#[source] std::io::Error),

@@ -54,7 +54,7 @@ impl MyGoodDomainModelLock {
     pub(crate) fn add_item(
         &self,
         item: String,
-    ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+    ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
         self.lock
             .blocking_write()
             .items
@@ -68,7 +68,7 @@ impl MyGoodDomainModelLock {
     pub(crate) fn remove_item(
         &self,
         todo_pos: usize,
-    ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+    ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
         let items = &mut self.lock.blocking_write().items;
         if todo_pos > items.len() {
             Err(MyGoodProcessingError::ItemDoesNotExist(todo_pos))
@@ -82,7 +82,7 @@ impl MyGoodDomainModelLock {
     }
     pub(crate) fn clean_list(
         &self,
-    ) -> Result<(StateChanged, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+    ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
         self.lock.blocking_write().items.clear();
         Ok((
             true,
