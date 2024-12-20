@@ -71,4 +71,16 @@ Now the calling app can aquire the lock on the model and read the needed values.
 However, do not write on the model, as this would not be detected by the state management!
 Therefore, keep the model's fields private and expose them only via getters (in addition to the CQRS Queries).
 
-## Traits
+### Configure the app's state management
+Don't forget to add each model as a field into your implementation of the `AppState` trait.
+
+#### when RustAutoOpaque<MyModel> is generated?
+After adding your model as a field to your `AppState` implementation the next FRB code generation run will pick it up and generate your `RustAutoOpaque<MyModel>` struct.
+
+The recommended order is:
+
+1. Implement your CQRSModel and CQRSModelLock implementation. Here the Lock needs to have a field of type `RustAutoOpaque<MyModel>`, for which the compiler will complain it doesn't exist.
+2. Add the Lock as a field to your `AppState` implementation.
+3. Run the FRB code generation.
+Now `RustAutoOpaque<MyModel>` is generated.
+
