@@ -52,7 +52,7 @@ pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<T
     log::info!("-------- Generating API --------");
     // check if it implements the Lifecycle trait
     // not parsing with syn::parse, to save time. Returning the unchanged input anyways, would need to clone() otherwise
-    if !item.to_string().contains("Lifecycle for ") {
+    if !item.to_string().contains("Lifecycle") {
         panic!("The macro has to be declaired on an 'impl Lifecycle for'!");
     }
 
@@ -203,14 +203,7 @@ mod tests {
 
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                }
-            }
-            impl MyGoodDomainModelQuery {
-                fn process_with_lifecycle(
-                    self,
-                    lifecycle: &LifecycleImpl,
-                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
@@ -228,14 +221,7 @@ mod tests {
             }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                }
-            }
-            impl MyGoodDomainModelCommand {
-                fn process_with_lifecycle(
-                    self,
-                    lifecycle: &LifecycleImpl,
-                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
@@ -350,14 +336,7 @@ mod tests {
 
                     impl Cqrs for MyGoodDomainModelQuery {
                         fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                            self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                        }
-                    }
-                    impl MyGoodDomainModelQuery {
-                        fn process_with_lifecycle(
-                            self,
-                            lifecycle: &LifecycleImpl,
-                        ) -> Result<Vec<Effect>, ProcessingError> {
+                            let lifecycle = LifecycleImpl::get_singleton();
                             let app_state = &lifecycle.app_state;
                             let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                             let result = match self {
@@ -375,14 +354,7 @@ mod tests {
                     }
                     impl Cqrs for MyGoodDomainModelCommand {
                         fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                            self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                        }
-                    }
-                    impl MyGoodDomainModelCommand {
-                        fn process_with_lifecycle(
-                            self,
-                            lifecycle: &LifecycleImpl,
-                        ) -> Result<Vec<Effect>, ProcessingError> {
+                            let lifecycle = LifecycleImpl::get_singleton();
                             let app_state = &lifecycle.app_state;
                             let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                             let (state_changed, result) = match self {
@@ -417,14 +389,7 @@ mod tests {
         }
         impl Cqrs for MySecondDomainModelQuery {
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                self.process_with_lifecycle(LifecycleImpl::get_singleton())
-            }
-        }
-        impl MySecondDomainModelQuery {
-            fn process_with_lifecycle(
-                self,
-                lifecycle: &LifecycleImpl,
-            ) -> Result<Vec<Effect>, ProcessingError> {
+                let lifecycle = LifecycleImpl::get_singleton();
                 let app_state = &lifecycle.app_state;
                 let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                 let result = match self {
@@ -443,14 +408,7 @@ mod tests {
         }
         impl Cqrs for MySecondDomainModelCommand {
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                self.process_with_lifecycle(LifecycleImpl::get_singleton())
-            }
-        }
-        impl MySecondDomainModelCommand {
-            fn process_with_lifecycle(
-                self,
-                lifecycle: &LifecycleImpl,
-            ) -> Result<Vec<Effect>, ProcessingError> {
+                let lifecycle = LifecycleImpl::get_singleton();
                 let app_state = &lifecycle.app_state;
                 let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                 let (state_changed, result) = match self {

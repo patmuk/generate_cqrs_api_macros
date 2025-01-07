@@ -79,13 +79,6 @@ fn generate_cqrs_functions(
     processing_error: &Ident,
 ) -> TokenStream {
     let enum_ident = format_ident!("{}{}", domain_model_struct_ident, cqrs_kind);
-    let process_trait_impl = quote! {
-        impl Cqrs for #enum_ident {
-            fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                self.process_with_lifecycle(LifecycleImpl::get_singleton())
-            }
-        }
-    };
     let domain_model_lock_var = format_ident!(
         "{}",
         snake_case_with_sep(&domain_model_lock_ident.to_string(), "_")
@@ -162,13 +155,9 @@ fn generate_cqrs_functions(
 
     // generate final code
     quote! {
-        #process_trait_impl
-
-        impl #enum_ident{
-            fn process_with_lifecycle(
-                self,
-                lifecycle: &LifecycleImpl,
-            ) -> Result<Vec<Effect>, ProcessingError> {
+        impl Cqrs for #enum_ident{
+            fn process(self) -> Result<Vec<Effect>, ProcessingError> {
+                let lifecycle = LifecycleImpl::get_singleton();
                 let app_state = &lifecycle.app_state;
                 let #domain_model_lock_var = &app_state.#domain_model_lock_var;
                 let #result_type = match self {
@@ -939,14 +928,7 @@ mod tests {
         let expected = quote! {
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process (self) -> Result < Vec < Effect > , ProcessingError > {
-                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                }
-            }
-            impl MyGoodDomainModelQuery {
-                fn process_with_lifecycle(
-                    self,
-                    lifecycle: &LifecycleImpl,
-                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
@@ -968,14 +950,7 @@ mod tests {
                 }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                }
-            }
-            impl MyGoodDomainModelCommand {
-                fn process_with_lifecycle(
-                    self,
-                    lifecycle: &LifecycleImpl,
-                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
@@ -1079,14 +1054,7 @@ mod tests {
             }
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process (self) -> Result < Vec < Effect > , ProcessingError > {
-                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                }
-            }
-            impl MyGoodDomainModelQuery {
-                fn process_with_lifecycle(
-                    self,
-                    lifecycle: &LifecycleImpl,
-                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
@@ -1108,14 +1076,7 @@ mod tests {
                 }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                }
-            }
-            impl MyGoodDomainModelCommand {
-                fn process_with_lifecycle(
-                    self,
-                    lifecycle: &LifecycleImpl,
-                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
@@ -1152,14 +1113,7 @@ mod tests {
             }
             impl Cqrs for MySecondDomainModelQuery {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
-                }
-            }
-            impl MySecondDomainModelQuery {
-                fn process_with_lifecycle(
-                    self,
-                    lifecycle: &LifecycleImpl,
-                ) -> Result<Vec<Effect>, ProcessingError> {
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state  = &lifecycle.app_state;
                     let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                     let result = match self {
@@ -1179,36 +1133,29 @@ mod tests {
             }
             impl Cqrs for MySecondDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    self.process_with_lifecycle(LifecycleImpl::get_singleton())
+                    let lifecycle = LifecycleImpl::get_singleton();
+                    let app_state = &lifecycle.app_state;
+                    let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
+                    let (state_changed, result) = match self {
+                        MySecondDomainModelCommand::AddObject(item, priority) => my_second_domain_model_lock.add_object(item, priority),
+                        MySecondDomainModelCommand::CleanAllObjects => my_second_domain_model_lock.clean_all_objects(),
+                        MySecondDomainModelCommand::CopyItem(item_pos) => my_second_domain_model_lock.copy_item(item_pos),
+                    }
+                    .map_err(ProcessingError::MySecondProcessingError)?;
+                    if state_changed {
+                        app_state.mark_dirty();
+                        lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                    }
+                    Ok(result
+                        .into_iter()
+                        .map(|effect| match effect {
+                            MySecondDomainModelEffect::RenderItems(model_lock) => Effect::MySecondDomainModelRenderItems(model_lock),
+                            MySecondDomainModelEffect::RenderItem(item) => Effect::MySecondDomainModelRenderItem(item),
+                            MySecondDomainModelEffect::RenderMySecondDomainModel(model_lock) => Effect::MySecondDomainModelRenderMySecondDomainModel(model_lock),
+                        })
+                    .collect())
                 }
             }
-            impl MySecondDomainModelCommand {
-                fn process_with_lifecycle(
-                    self,
-                    lifecycle: &LifecycleImpl,
-                ) -> Result<Vec<Effect>, ProcessingError> {
-                let app_state = &lifecycle.app_state;
-                let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
-                let (state_changed, result) = match self {
-                    MySecondDomainModelCommand::AddObject(item, priority) => my_second_domain_model_lock.add_object(item, priority),
-                    MySecondDomainModelCommand::CleanAllObjects => my_second_domain_model_lock.clean_all_objects(),
-                    MySecondDomainModelCommand::CopyItem(item_pos) => my_second_domain_model_lock.copy_item(item_pos),
-                }
-                .map_err(ProcessingError::MySecondProcessingError)?;
-                if state_changed {
-                    app_state.mark_dirty();
-                    lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
-                }
-                Ok(result
-                    .into_iter()
-                    .map(|effect| match effect {
-                        MySecondDomainModelEffect::RenderItems(model_lock) => Effect::MySecondDomainModelRenderItems(model_lock),
-                        MySecondDomainModelEffect::RenderItem(item) => Effect::MySecondDomainModelRenderItem(item),
-                        MySecondDomainModelEffect::RenderMySecondDomainModel(model_lock) => Effect::MySecondDomainModelRenderMySecondDomainModel(model_lock),
-                    })
-                .collect())
-            }
-        }
         };
 
         assert_eq!(expected.to_string(), result.to_string());
