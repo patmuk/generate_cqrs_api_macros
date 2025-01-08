@@ -319,7 +319,7 @@ mod tests {
 
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
@@ -337,7 +337,7 @@ mod tests {
             }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
+                    let lifecycle = LifecycleImpl::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
@@ -452,7 +452,7 @@ mod tests {
 
                     impl Cqrs for MyGoodDomainModelQuery {
                         fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                            let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
+                            let lifecycle = LifecycleImpl::get_singleton();
                             let app_state = &lifecycle.app_state;
                             let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                             let result = match self {
@@ -470,7 +470,7 @@ mod tests {
                     }
                     impl Cqrs for MyGoodDomainModelCommand {
                         fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                            let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
+                            let lifecycle = LifecycleImpl::get_singleton();
                             let app_state = &lifecycle.app_state;
                             let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                             let (state_changed, result) = match self {
@@ -505,7 +505,7 @@ mod tests {
         }
         impl Cqrs for MySecondDomainModelQuery {
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
+                let lifecycle = LifecycleImpl::get_singleton();
                 let app_state = &lifecycle.app_state;
                 let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                 let result = match self {
@@ -524,7 +524,7 @@ mod tests {
         }
         impl Cqrs for MySecondDomainModelCommand {
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
+                let lifecycle = LifecycleImpl::get_singleton();
                 let app_state = &lifecycle.app_state;
                 let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                 let (state_changed, result) = match self {
