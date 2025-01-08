@@ -49,8 +49,7 @@ pub(crate) fn generate_cqrs_impl(
                 domain_model_ident,
                 domain_model_lock_ident,
                 &cqrs_queries_sig_idents,
-                effect_ident,
-                effect_variants,
+                (effect_ident, effect_variants),
                 error_ident,
             );
             let generated_cqrs_commands = generate_cqrs_functions(
@@ -59,8 +58,7 @@ pub(crate) fn generate_cqrs_impl(
                 domain_model_ident,
                 domain_model_lock_ident,
                 &cqrs_commands_sig_idents,
-                effect_ident,
-                effect_variants,
+                (effect_ident, effect_variants),
                 error_ident,
             );
 
@@ -80,8 +78,7 @@ fn generate_cqrs_functions(
     domain_model_struct_ident: &Ident,
     domain_model_lock_ident: &Ident,
     cqrs_queries_sig_idents: &[(Ident, Vec<Ident>)],
-    effect: &Ident,
-    effect_variants: &[Variant],
+    effect: (&Ident, &[Variant]),
     processing_error: &Ident,
 ) -> TokenStream {
     let enum_ident = format_ident!("{}{}", domain_model_struct_ident, cqrs_kind);
@@ -106,7 +103,7 @@ fn generate_cqrs_functions(
         }
     });
 
-    let effects_match_statements = effect_variants.iter().map(|variant| {
+    let effects_match_statements = effect.1.iter().map(|variant| {
         // use the type as the ident, as enum variant payloads don't have a name
         let variant_fields_idents = match &variant.fields {
             Fields::Unit => {
@@ -131,13 +128,14 @@ fn generate_cqrs_functions(
         let lhs_ident = format_ident!("{}", variant.ident);
         let rhs_ident = format_ident!("{}{}", domain_model_struct_ident, variant.ident);
 
+        let effect_ident = effect.0;
         if variant_fields_idents.is_empty() {
             quote! {
-                #effect::#lhs_ident => Effect :: #rhs_ident,
+                #effect_ident::#lhs_ident => Effect :: #rhs_ident,
             }
         } else {
             quote! {
-                #effect::#lhs_ident ( #(#variant_fields_idents),* ) => Effect ::#rhs_ident ( #(#variant_fields_idents),* ),
+                #effect_ident::#lhs_ident ( #(#variant_fields_idents),* ) => Effect ::#rhs_ident ( #(#variant_fields_idents),* ),
             }
         }
     });
@@ -915,8 +913,7 @@ mod tests {
             &domain_model_struct_ident,
             &domain_model_lock_ident,
             &get_cqrs_fns_sig_idents(&cqrs_q),
-            &effect_ident,
-            &effect_variants,
+            (&effect_ident, &effect_variants),
             &processing_error,
         );
         let cqrs_commands = generate_cqrs_functions(
@@ -925,8 +922,7 @@ mod tests {
             &domain_model_struct_ident,
             &domain_model_lock_ident,
             &get_cqrs_fns_sig_idents(&cqrs_c),
-            &effect_ident,
-            &effect_variants,
+            (&effect_ident, &effect_variants),
             &processing_error,
         );
         let result = quote! {

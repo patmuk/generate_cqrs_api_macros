@@ -13,7 +13,7 @@ use crate::parsing::read_rust_files::{read_rust_file_content, tokens_2_file_loca
 use crate::parsing::type_2_ident::get_ident;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, Ident, ImplItemType, ItemImpl, Result, Variant};
+use syn::{parse2, Ident, ItemImpl, Result, Variant};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct BasePath(pub(crate) String);
