@@ -13,7 +13,10 @@ use syn::Variant;
 use crate::generate_api_macro_impl::ModelNEffectsNErrors;
 use crate::parsing::type_2_ident::{get_ident, get_path, get_type_name};
 
-pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenStream> {
+pub(crate) fn generate_cqrs_impl(
+    lifecycle_impl_ident: &Ident,
+    models: &[ModelNEffectsNErrors],
+) -> Vec<TokenStream> {
     models
         .iter()
         .map(|model| {
@@ -41,6 +44,7 @@ pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenSt
                 generate_cqrs_command_enum(&cqrs_commands_sig_tipes, domain_model_ident);
 
             let generated_cqrs_queries = generate_cqrs_functions(
+                lifecycle_impl_ident,
                 "Query",
                 domain_model_ident,
                 domain_model_lock_ident,
@@ -50,6 +54,7 @@ pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenSt
                 error_ident,
             );
             let generated_cqrs_commands = generate_cqrs_functions(
+                lifecycle_impl_ident,
                 "Command",
                 domain_model_ident,
                 domain_model_lock_ident,
@@ -70,6 +75,7 @@ pub(crate) fn generate_cqrs_impl(models: &[ModelNEffectsNErrors]) -> Vec<TokenSt
 }
 
 fn generate_cqrs_functions(
+    lifecycle_impl_ident: &Ident,
     cqrs_kind: &str,
     domain_model_struct_ident: &Ident,
     domain_model_lock_ident: &Ident,
@@ -157,7 +163,7 @@ fn generate_cqrs_functions(
     quote! {
         impl Cqrs for #enum_ident{
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                let lifecycle = LifecycleImpl::get_singleton();
+                let lifecycle: #lifecycle_impl_ident = Lifecycle::get_singleton();
                 let app_state = &lifecycle.app_state;
                 let #domain_model_lock_var = &app_state.#domain_model_lock_var;
                 let #result_type = match self {
@@ -444,7 +450,7 @@ fn match_vec_effect(
 mod tests {
 
     use quote::{format_ident, quote};
-    use syn::parse_str;
+    use syn::{parse_str, Ident};
 
     use crate::{
         generate_api_macro_impl::{BasePath, ModelNEffectsNErrors},
@@ -902,7 +908,9 @@ mod tests {
             .into_pairs()
             .map(|pair| pair.value().clone())
             .collect();
+        let lifecycle_impl_ident: Ident = format_ident!("LifecycleImpl");
         let cqrs_queries = generate_cqrs_functions(
+            &lifecycle_impl_ident,
             "Query",
             &domain_model_struct_ident,
             &domain_model_lock_ident,
@@ -912,6 +920,7 @@ mod tests {
             &processing_error,
         );
         let cqrs_commands = generate_cqrs_functions(
+            &lifecycle_impl_ident,
             "Command",
             &domain_model_struct_ident,
             &domain_model_lock_ident,
@@ -928,7 +937,7 @@ mod tests {
         let expected = quote! {
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process (self) -> Result < Vec < Effect > , ProcessingError > {
-                    let lifecycle = LifecycleImpl::get_singleton();
+                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
@@ -950,7 +959,7 @@ mod tests {
                 }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let lifecycle = LifecycleImpl::get_singleton();
+                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
@@ -1034,8 +1043,8 @@ mod tests {
                 error_ident: format_ident!("MySecondProcessingError"),
             },
         ];
-
-        let generated_cqrs = generate_cqrs_impl(&models);
+        let lifecycle_impl_ident: Ident = format_ident!("LifecycleImpl");
+        let generated_cqrs = generate_cqrs_impl(&lifecycle_impl_ident, &models);
         let result = quote! {
             #(#generated_cqrs)*
         };
@@ -1054,7 +1063,7 @@ mod tests {
             }
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process (self) -> Result < Vec < Effect > , ProcessingError > {
-                    let lifecycle = LifecycleImpl::get_singleton();
+                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
@@ -1076,7 +1085,7 @@ mod tests {
                 }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let lifecycle = LifecycleImpl::get_singleton();
+                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
@@ -1113,7 +1122,7 @@ mod tests {
             }
             impl Cqrs for MySecondDomainModelQuery {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let lifecycle = LifecycleImpl::get_singleton();
+                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                     let app_state  = &lifecycle.app_state;
                     let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                     let result = match self {
@@ -1133,7 +1142,7 @@ mod tests {
             }
             impl Cqrs for MySecondDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let lifecycle = LifecycleImpl::get_singleton();
+                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                     let (state_changed, result) = match self {

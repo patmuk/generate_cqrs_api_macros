@@ -10,9 +10,10 @@ use crate::generating::traits::cqrs_traits::generate_cqrs_traits;
 use crate::parsing::get_struct_by_trait::get_structs_by_traits;
 // use crate::parsing::get_use_statements::get_use_statements;
 use crate::parsing::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
+use crate::parsing::type_2_ident::get_ident;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Result, Variant};
+use syn::{parse2, Ident, ImplItemType, ItemImpl, Result, Variant};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct BasePath(pub(crate) String);
@@ -52,17 +53,19 @@ pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<T
     log::info!("-------- Generating API --------");
     // check if it implements the Lifecycle trait
     // not parsing with syn::parse, to save time. Returning the unchanged input anyways, would need to clone() otherwise
-    if !item.to_string().contains("Lifecycle") {
-        panic!("The macro has to be declaired on an 'impl Lifecycle for'!");
+    if !item.to_string().contains("impl Lifecycle for") {
+        panic!("The macro has to be declaired on an 'impl Lifecycle for'! (You can't use generics, as the singleton instance is to be stored as a static global variable.)");
     }
-
     let file_locations = tokens_2_file_locations(file_paths)?;
     if file_locations.is_empty() {
         panic!("At least one model implementatoin struct has to be provided\nlike #[generate_api(\"domain/MyModel.rs\")]\nProvide multiple model implementations with #[generate_api(\"domain/MyModel.rs\", \"other_domain/MySecondModel.rs\")]");
     }
+
+    let lifecycle_impl_ident: Ident = get_type_ident_from_impl(&item)?;
+
     let parsed_files = read_rust_file_content(file_locations)?;
 
-    let generated_code = generate_code(parsed_files)?;
+    let generated_code = generate_code(lifecycle_impl_ident, parsed_files)?;
 
     let output = quote! {
         #item
@@ -71,7 +74,16 @@ pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<T
     Ok(output)
 }
 
-fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
+fn get_type_ident_from_impl(item: &TokenStream) -> Result<Ident> {
+    let ast = parse2::<ItemImpl>(item.clone())?;
+    // let tipe = get_structs_by_traits(&ast, ["Lifecycle"]);
+    get_ident(&ast.self_ty)
+}
+
+fn generate_code(
+    lifecycle_impl_ident: Ident,
+    parsed_files: Vec<ParsedFiles>,
+) -> Result<TokenStream> {
     let models_parsed: Vec<ModelParsed> = parsed_files.into_iter().map(|parsed_file|{
         let ast = syn::parse_file(&parsed_file.source_code.0).unwrap_or_else(|_| panic!("cannot parse the code file {}", parsed_file.base_path.0));
         let trait_impls = get_structs_by_traits(&ast, &["CqrsModel", "CqrsModelLock"]);
@@ -91,7 +103,7 @@ fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
 
     let (models_n_effect, generated_effect_enum) = generate_effects_enum(models_parsed);
     let (models_n_efects_n_errors, generated_error_enum) = generate_errors_enum(models_n_effect);
-    let generated_cqrs_fns = &generate_cqrs_impl(&models_n_efects_n_errors);
+    let generated_cqrs_fns = &generate_cqrs_impl(&lifecycle_impl_ident, &models_n_efects_n_errors);
     let generated_api_traits = generate_api_traits();
     let generated_cqrs_traits = generate_cqrs_traits();
 
@@ -120,12 +132,116 @@ fn generate_code(parsed_files: Vec<ParsedFiles>) -> Result<TokenStream> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        generate_api_macro_impl::generate_code, parsing::read_rust_files::read_rust_file_content,
+        generate_api_macro_impl::{generate_code, get_type_ident_from_impl},
+        parsing::read_rust_files::read_rust_file_content,
     };
-    use quote::quote;
+    use quote::{format_ident, quote};
 
     use super::generate_api_impl;
 
+    #[test]
+    fn parse_lifecycle_impl_ident() {
+        let lifecycle_impl_token = quote! {
+            impl Lifecycle for LifecycleImpl {
+            type AppConfig = AppConfigImpl;
+            type AppState = AppStateImpl;
+            type AppStatePersister = AppStateFilePersister;
+
+            fn new(
+                app_config: Self::AppConfig,
+                persister: Self::AppStatePersister,
+            ) -> Result<&'static Self, AppStatePersistError> {
+                // as this is static, it is executed one time only! So there is only one OnceLock instance.
+                // static SINGLETON: OnceLock<Self::LifecycleSingleton> = OnceLock::new();
+                static SINGLETON: OnceLock<LifecycleImpl> = OnceLock::new();
+
+                info!("Initializing app with config: {:?}", &app_config);
+                // calling init() the first time creates the singleton. (Although self is consumed, there migth be multiple instances of self.)
+                // not using SINGLETON.get_or_init() so we can propergate the AppStatePersistError
+                let result = match SINGLETON.get() {
+                    Some(instance) => Ok(instance),
+                    None => {
+                        let app_state = match persister.load_app_state() {
+                            Ok(app_state) => app_state,
+                            Err(AppStatePersistError::DiskError(disk_err)) => match disk_err {
+                                AppStateFilePersisterError::FileNotFound(file_path)
+                                // todo match on IO-FileNotFound or avoid this error type duplication
+                                // | AppStateFilePersisterError::IOError(io_Error, file_path)
+                                //     if io_Error.kind() == IoErrorKind::NotFound
+                                    =>
+                                {
+                                    info!(
+                                        "No app state file found in {:?}, creating new state there.",
+                                        &file_path
+                                    );
+                                    let app_state = Self::AppState::new(&app_config);
+                                    persister.persist_app_state(&app_state)?;
+                                    app_state
+                                }
+                                _ => return Err(AppStatePersistError::DiskError(disk_err)),
+                            },
+                            Err(e) => return Err(e),
+                        };
+                        // let lifecycle_singleton = LifecycleSingleton {
+                        //     instance: LifecycleImpl {
+                        //         app_config,
+                        //         app_state,
+                        //         persister,
+                        //     },
+                        // };
+                        let lifecycle_singleton = LifecycleImpl {
+                            app_config,
+                            app_state,
+                            persister,
+                        };
+                        SINGLETON.set(lifecycle_singleton);
+                        Ok(SINGLETON
+                            .get()
+                            .expect("Impossible error - content has just been set!"))
+                    }
+                };
+                info!(
+                    "Initialization finished, log level is {:?}",
+                    log::max_level()
+                );
+                result
+            }
+
+            fn get_singleton() -> &'static Self {
+                SINGLETON
+                    .get()
+                    .expect("Lifecycle: should been initialized with UnInitializedLifecycle::init()!")
+            }
+
+            fn app_state(&self) -> &Self::AppState {
+                &self.app_state
+            }
+
+            fn app_config(&self) -> &Self::AppConfig {
+                &self.app_config
+            }
+
+            /// persist the app state to the previously stored location
+            fn persist(&self) -> Result<(), AppStatePersistError> {
+                self.persister.persist_app_state(&self.app_state)
+            }
+
+            fn shutdown(&self) -> Result<(), AppStatePersistError> {
+                info!("shutting down the app");
+                // blocks on the Locks of inner fields
+                // TODO implent timeout and throw an error?
+                self.persist()
+            }
+        }
+        };
+
+        assert_eq!(
+            "LifecycleImpl".to_string(),
+            get_type_ident_from_impl(&lifecycle_impl_token)
+                .unwrap()
+                .to_string()
+        );
+    }
     #[test]
     fn generate_all_from_good_file_test() {
         let expected = quote! {
@@ -203,7 +319,7 @@ mod tests {
 
             impl Cqrs for MyGoodDomainModelQuery {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let lifecycle = LifecycleImpl::get_singleton();
+                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let result = match self {
@@ -221,7 +337,7 @@ mod tests {
             }
             impl Cqrs for MyGoodDomainModelCommand {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                    let lifecycle = LifecycleImpl::get_singleton();
+                    let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                     let app_state = &lifecycle.app_state;
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
@@ -249,7 +365,7 @@ mod tests {
         let paths_n_codes =
             read_rust_file_content(vec!["../tests/good_source_file/mod.rs".to_string()])
                 .expect("Could not read test oracle file: ");
-        let result = generate_code(paths_n_codes).unwrap();
+        let result = generate_code(format_ident!("LifecycleImpl"), paths_n_codes).unwrap();
         assert_eq!(expected.to_string(), result.to_string());
     }
 
@@ -336,7 +452,7 @@ mod tests {
 
                     impl Cqrs for MyGoodDomainModelQuery {
                         fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                            let lifecycle = LifecycleImpl::get_singleton();
+                            let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                             let app_state = &lifecycle.app_state;
                             let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                             let result = match self {
@@ -354,7 +470,7 @@ mod tests {
                     }
                     impl Cqrs for MyGoodDomainModelCommand {
                         fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                            let lifecycle = LifecycleImpl::get_singleton();
+                            let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                             let app_state = &lifecycle.app_state;
                             let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                             let (state_changed, result) = match self {
@@ -389,7 +505,7 @@ mod tests {
         }
         impl Cqrs for MySecondDomainModelQuery {
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                let lifecycle = LifecycleImpl::get_singleton();
+                let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                 let app_state = &lifecycle.app_state;
                 let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                 let result = match self {
@@ -408,7 +524,7 @@ mod tests {
         }
         impl Cqrs for MySecondDomainModelCommand {
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
-                let lifecycle = LifecycleImpl::get_singleton();
+                let lifecycle: LifecycleImpl = Lifecycle::get_singleton();
                 let app_state = &lifecycle.app_state;
                 let my_second_domain_model_lock = &app_state.my_second_domain_model_lock;
                 let (state_changed, result) = match self {
@@ -437,7 +553,7 @@ mod tests {
             "../tests/second_model_file/mod.rs".to_string(),
         ])
         .expect("Could not read test oracle file: ");
-        let result = generate_code(paths_n_codes).unwrap();
+        let result = generate_code(format_ident!("LifecycleImpl"), paths_n_codes).unwrap();
         assert_eq!(expected.to_string(), result.to_string());
     }
 
