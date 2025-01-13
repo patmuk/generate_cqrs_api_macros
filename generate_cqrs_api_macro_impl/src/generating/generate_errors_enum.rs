@@ -49,8 +49,8 @@ pub(crate) fn generate_errors_enum(
             pub enum ProcessingError {
                 #(  #[error("Error during processing: {0}")]
                     #processing_errors ( #processing_errors ),)*
-                #[error("Processing was fine, but state could not be persisted: {0}")]
-                NotPersisted(#[source] std::io::Error),
+                #[error("Processing was fine, but state could not be persisted in url '{url}': {error}")]
+                NotPersisted { error: String, url: String },
             }
         },
     )
@@ -92,8 +92,8 @@ mod tests {
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
                 MyGoodProcessingError(MyGoodProcessingError),
-                #[error("Processing was fine, but state could not be persisted: {0}")]
-                NotPersisted(#[source] std::io::Error),
+                #[error("Processing was fine, but state could not be persisted in url '{url}': {error}")]
+                NotPersisted { error: String, url: String },
             }
         };
         assert_eq!(expected_code.to_string(), result.1.to_string());
@@ -149,8 +149,8 @@ mod tests {
                 MyGoodProcessingError(MyGoodProcessingError),
                 #[error("Error during processing: {0}")]
                 MySecondProcessingError(MySecondProcessingError),
-                #[error("Processing was fine, but state could not be persisted: {0}")]
-                NotPersisted(#[source] std::io::Error),
+                #[error("Processing was fine, but state could not be persisted in url '{url}': {error}")]
+                NotPersisted { error: String, url: String },
             }
         };
         assert_eq!(expected_code.to_string(), result.1.to_string());
@@ -198,8 +198,8 @@ mod tests {
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
                 MyGoodProcessingError(MyGoodProcessingError),
-                #[error("Processing was fine, but state could not be persisted: {0}")]
-                NotPersisted(#[source] std::io::Error),
+                #[error("Processing was fine, but state could not be persisted in url '{url}': {error}")]
+                NotPersisted { error: String, url: String },
             }
         };
         assert_eq!(expected_code.to_string(), result.1.to_string());
@@ -232,8 +232,8 @@ mod tests {
             pub enum ProcessingError {
                 #[error("Error during processing: {0}")]
                 MyGoodProcessingError(MyGoodProcessingError),
-                #[error("Processing was fine, but state could not be persisted: {0}")]
-                NotPersisted(#[source] std::io::Error),
+                #[error("Processing was fine, but state could not be persisted in url '{url}': {error}")]
+                NotPersisted { error: String, url: String },
             }
         };
         assert_eq!(expected_code.to_string(), result.1.to_string());

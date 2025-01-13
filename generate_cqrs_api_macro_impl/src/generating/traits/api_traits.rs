@@ -3,42 +3,69 @@ use quote::quote;
 
 pub(crate) fn generate_api_traits() -> TokenStream {
     quote! {
-        use log::debug;
-        use std::path::PathBuf;
-
         pub trait Lifecycle {
-            /// the app config is to be set only once, and read afterwards. If mutation is needed wrapp it into a lock for concurrent write access
-            /// to avoid an illegal state (app state not loaded) we do the setup and init in one go
-            /// get the instance with get()
-            fn new(path: Option<String>) -> &'static Self;
-            fn get_singleton() -> &'static Self;
-            fn app_config(&self) -> &impl AppConfig;
-            fn app_state(&self) -> &impl AppState;
-            /// call to initialize the app.
             /// loads the app's state, which can be io-heavy
-            fn init<AC: AppConfig, AS: AppState>(app_config: &AC) -> AS {
-                debug!("Initializing app with config: {:?}", app_config);
-                AppState::load_or_new(app_config)
-            }
-            fn persist(&self) -> Result<(), std::io::Error>;
-            fn shutdown(&self) -> Result<(), std::io::Error>;
+            /// get the instance with get_singleton(). Create the initial singleton with UnInitilizedLifecycle::init()
+            fn new<
+                AC: AppConfig + std::fmt::Debug,
+                ASP: AppStatePersister,
+                ASPE: AppStatePersistError + From<(std::io::Error, String)> + From<(bincode::Error, String)>,
+            >(
+                app_config: AC,
+            ) -> Result<&'static Self, ASPE>;
+            /// get the instance with get_singleton(). Create the initial singleton with Lifecycle::new()
+            fn get_singleton() -> &'static Self;
+            fn borrow_app_config<AC: AppConfig>(&self) -> &AC;
+            fn borrow_app_state<AS: AppState>(&self) -> &AS;
+            /// persist the app state to the previously stored location
+            fn persist(&self) -> Result<(), ProcessingError>;
+            fn shutdown(&self) -> Result<(), ProcessingError>;
+        }
+        pub trait AppConfig: Default {
+            /// call to overwrite default values.
+            /// Doesn't trigger long initialization operations.
+            fn new(url: Option<String>) -> Self;
+            // app state storage location
+            fn get_app_state_url(&self) -> &str;
         }
 
-        pub trait AppConfig: Default + std::fmt::Debug {
-            /// call to overwrite default values.
-            /// Doesn't trigger initialization.
-            fn new(path: Option<String>) -> Self;
-            // app state storage location
-            fn get_app_state_file_path(&self) -> &std::path::PathBuf;
-        }
         pub trait AppState {
-            fn load_or_new<A: AppConfig>(app_config: &A) -> Self
-            where
-                Self: Sized;
-            #[allow(clippy::ptr_arg)] // must be PathBuf; as Path isn't Size, frb can't transport it
-            fn persist_to_path(&self, path: &PathBuf) -> Result<(), std::io::Error>;
+            fn new<AC: AppConfig>(app_config: &AC) -> Self;
             fn dirty_flag_value(&self) -> bool;
             fn mark_dirty(&self);
+        }
+
+        pub trait AppStatePersistError: std::error::Error {
+            /// convert to ProcessingError::NotPersisted
+            fn to_processing_error(&self) -> ProcessingError;
+        }
+
+        pub trait AppStatePersister {
+            /// prepares for persisting a new AppState. Not needed if the AppState is loaded!
+            fn new<AC: AppConfig, ASPE: AppStatePersistError + From<(std::io::Error, String)>>(
+                app_config: &AC,
+            ) -> Result<Self, ASPE>
+            where
+                Self: Sized;
+            /// Loads the application state.
+            /// Returns a result with the `AppState` if successful or an `InfrastructureError` otherwise.
+            fn load_app_state<
+                AC: AppConfig,
+                AS: AppState + Serialize + for<'a> Deserialize<'a>,
+                ASPE: AppStatePersistError + From<(std::io::Error, String)> + From<(bincode::Error, String)>,
+            >(
+                &self,
+            ) -> Result<AS, ASPE>;
+
+            /// Persists the application state to storage.
+            /// Ensures that the `AppState` is stored in a durable way, regardless of the underlying mechanism.
+            fn persist_app_state<
+                AS: AppState + Serialize + for<'a> Deserialize<'a> + std::fmt::Debug,
+                ASPE: AppStatePersistError + From<(std::io::Error, String)>,
+            >(
+                &self,
+                state: &AS,
+            ) -> Result<(), ASPE>;
         }
     }
 }
