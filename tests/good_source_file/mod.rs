@@ -1,15 +1,11 @@
-use crate::{CqrsModel, CqrsModelLock};
+use crate::*;
 
-include!("./mocks/app_config_mock.rs");
-include!("./mocks/app_state_mock.rs");
-include!("./mocks/rust_auto_opaque_mock.rs");
-
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MyGoodDomainModel {
     items: Vec<DomainItem>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct DomainItem {
     text: String,
 }
@@ -18,7 +14,32 @@ struct DomainItem {
 pub struct MyGoodDomainModelLock {
     pub(crate) lock: RustAutoOpaque<MyGoodDomainModel>,
 }
-impl CqrsModelLock<MyGoodDomainModel> for MyGoodDomainModelLock {}
+
+impl Serialize for MyGoodDomainModelLock {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Serialize the model , the dirty flag is always false after loading
+        self.lock.blocking_read().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MyGoodDomainModelLock {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let list_model = MyGoodDomainModel::deserialize(deserializer)?;
+        Ok(Self::for_model(list_model))
+    }
+}
+
+impl CqrsModelLock<MyGoodDomainModel> for MyGoodDomainModelLock {
+    fn for_model(_model: MyGoodDomainModel) -> Self {
+        todo!()
+    }
+}
 
 #[allow(dead_code)]
 pub enum MyGoodDomainModelEffect {

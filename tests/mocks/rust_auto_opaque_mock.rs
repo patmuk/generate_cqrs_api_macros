@@ -13,4 +13,7 @@ impl<T: std::clone::Clone> RustAutoOpaque<T> {
     pub(crate) fn blocking_write(&self) -> T {
         self.clone().model
     }
+    pub(crate) fn blocking_read(&self) -> T {
+        self.clone().model
+    }
 }

@@ -1,35 +1,51 @@
 mod good_source_file;
+mod second_model_file;
+
 use generate_cqrs_api_macro::generate_api;
-use good_source_file::{AppStateImpl, MyGoodDomainModelLock};
+// use good_source_file::{AppStateImpl, MyGoodDomainModelLock};
+
+include!("./mocks/app_config_mock.rs");
+include!("./mocks/app_state_mock.rs");
+include!("./mocks/app_state_persister_mock.rs");
+include!("./mocks/rust_auto_opaque_mock.rs");
 
 pub struct LifecycleImpl {
     app_state: AppStateImpl,
+    persister: AppStatePersisterMock,
 }
 
-// #[generate_api("tests/good_source_file/mod.rs", "tests/second_model_file/mod.rs")]
-#[generate_api("tests/good_source_file/mod.rs")]
+#[generate_api("tests/good_source_file/mod.rs", "tests/second_model_file/mod.rs")]
+// #[generate_api("tests/second_model_file/mod.rs")]
+// #[generate_api("tests/good_source_file/mod.rs")]
 impl Lifecycle for LifecycleImpl {
-    fn new(_: std::option::Option<std::string::String>) -> &'static Self {
+    type Error = AppStatePersisterErrorMock;
+    fn initialise<AC: AppConfig + std::fmt::Debug>(
+        _app_config: AC,
+    ) -> Result<&'static Self, Self::Error> {
         unimplemented!()
     }
+    fn initialise_with_file_persister(
+        app_config: AppConfigImpl,
+    ) -> Result<(), AppStatePersisterErrorMock> {
+        Self::initialise(app_config)?;
+        Ok(())
+    }
+
     fn get_singleton() -> &'static Self {
         unimplemented!()
     }
-    fn app_config(&self) -> &impl AppConfig {
-        let neverused = Box::new(AppConfigImpl::default());
-        Box::leak(neverused)
+    /// persist the app state to the previously stored location
+    fn persist() -> Result<(), ProcessingError> {
+        let lifecycle = Self::get_singleton();
+        lifecycle
+            .persister
+            .persist_app_state(&lifecycle.app_state)
+            .map_err(|err| err.to_processing_error())
     }
-    fn app_state(&self) -> &impl AppState {
-        let neverused = Box::new(AppStateImpl {
-            my_good_domain_model_lock: MyGoodDomainModelLock::default(),
-        });
-        Box::leak(neverused)
-    }
-    fn persist(&self) -> std::result::Result<(), std::io::Error> {
-        unimplemented!()
-    }
-    fn shutdown(&self) -> std::result::Result<(), std::io::Error> {
-        unimplemented!()
+
+    fn shutdown() -> Result<(), ProcessingError> {
+        // blocks on the Locks of inner fields
+        // TODO implent timeout and throw an error?
+        Self::persist()
     }
 }
-// impl Lifecycle for UiTests {}

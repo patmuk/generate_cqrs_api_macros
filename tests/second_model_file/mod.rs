@@ -1,13 +1,11 @@
-use crate::{CqrsModel, CqrsModelLock};
+use crate::*;
 
-include!("./mocks/rust_auto_opaque_mock.rs");
-
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MySecondDomainModel {
     items: Vec<SecondDomainItem>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct SecondDomainItem {
     text: String,
 }
@@ -16,7 +14,32 @@ struct SecondDomainItem {
 pub struct MySecondDomainModelLock {
     pub(crate) lock: RustAutoOpaque<MySecondDomainModel>,
 }
-impl CqrsModelLock<MySecondDomainModel> for MySecondDomainModelLock {}
+
+impl Serialize for MySecondDomainModelLock {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Serialize the model , the dirty flag is always false after loading
+        self.lock.blocking_read().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MySecondDomainModelLock {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let list_model = MySecondDomainModel::deserialize(deserializer)?;
+        Ok(Self::for_model(list_model))
+    }
+}
+
+impl CqrsModelLock<MySecondDomainModel> for MySecondDomainModelLock {
+    fn for_model(_model: MySecondDomainModel) -> Self {
+        todo!()
+    }
+}
 
 #[allow(dead_code)]
 pub enum MySecondDomainModelEffect {

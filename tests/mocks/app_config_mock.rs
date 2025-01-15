@@ -1,8 +1,6 @@
-pub use crate::AppConfig;
-
 #[derive(Debug, Default)]
-pub(crate) struct AppConfigImpl {
-    app_state_file_path: std::path::PathBuf,
+pub struct AppConfigImpl {
+    app_state_file_path: String,
 }
 impl AppConfigImpl {}
 
@@ -11,11 +9,13 @@ impl AppConfig for AppConfigImpl {
         Self {
             app_state_file_path: std::env::current_dir()
                 .unwrap()
-                .join(path.unwrap_or("app-state".to_string())),
+                .join(path.unwrap_or("app-state".to_string()))
+                .to_string_lossy()
+                .to_string(),
         }
     }
     // app state storage location
-    fn get_app_state_file_path(&self) -> &std::path::PathBuf {
+    fn borrow_app_state_url(&self) -> &str {
         &self.app_state_file_path
     }
 }
