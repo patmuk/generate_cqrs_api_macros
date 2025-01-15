@@ -349,7 +349,7 @@ mod tests {
                     .map_err(ProcessingError::MyGoodProcessingError)?;
                     if state_changed {
                         app_state.mark_dirty();
-                        lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                        LifecycleImpl::persist()?;
                     }
                     Ok(result
                         .into_iter()
@@ -482,7 +482,7 @@ mod tests {
                             .map_err(ProcessingError::MyGoodProcessingError)?;
                             if state_changed {
                                 app_state.mark_dirty();
-                                lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                                LifecycleImpl::persist()?;
                             }
                             Ok(result
                                 .into_iter()
@@ -535,7 +535,7 @@ mod tests {
                 .map_err(ProcessingError::MySecondDomainProcessingError)?;
                 if state_changed {
                     app_state.mark_dirty();
-                    lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                    LifecycleImpl::persist()?;
                 }
                 Ok(result
                     .into_iter()

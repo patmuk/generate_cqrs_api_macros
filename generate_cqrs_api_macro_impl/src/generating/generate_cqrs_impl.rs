@@ -144,7 +144,7 @@ fn generate_cqrs_functions(
         quote! {
             if state_changed {
                 app_state.mark_dirty();
-                lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                LifecycleImpl::persist()?;
             }
         }
     } else {
@@ -162,7 +162,7 @@ fn generate_cqrs_functions(
         impl Cqrs for #enum_ident{
             fn process(self) -> Result<Vec<Effect>, ProcessingError> {
                 let lifecycle = #lifecycle_impl_ident::get_singleton();
-                let app_state = &lifecycle.borrow_app_state();
+                let app_state = &lifecycle.app_state;
                 let #domain_model_lock_var = &app_state.#domain_model_lock_var;
                 let #result_type = match self {
                     #(#lhs_cqrs_call => #rhs_cqrs_call,)*
@@ -966,7 +966,7 @@ mod tests {
                     .map_err(ProcessingError::MyGoodProcessingError)?;
                     if state_changed {
                         app_state.mark_dirty();
-                        lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                        LifecycleImpl::persist()?;
                     }
                     Ok(result
                     .into_iter()
@@ -1092,7 +1092,7 @@ mod tests {
                     .map_err(ProcessingError::MyGoodProcessingError)?;
                     if state_changed {
                         app_state.mark_dirty();
-                        lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                        LifecycleImpl::persist()?;
                     }
                     Ok(result
                     .into_iter()
@@ -1149,7 +1149,7 @@ mod tests {
                     .map_err(ProcessingError::MySecondProcessingError)?;
                     if state_changed {
                         app_state.mark_dirty();
-                        lifecycle.persist().map_err(ProcessingError::NotPersisted)?;
+                        LifecycleImpl::persist()?;
                     }
                     Ok(result
                         .into_iter()
