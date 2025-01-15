@@ -246,51 +246,68 @@ mod tests {
     fn generate_all_from_good_file_test() {
         let expected = quote! {
             use crate::good_source_file::*;
-            use log::debug;
-            use std::path::PathBuf;
             pub trait Lifecycle {
-                #[doc = r" the app config is to be set only once, and read afterwards. If mutation is needed wrapp it into a lock for concurrent write access"]
-                #[doc = r" to avoid an illegal state (app state not loaded) we do the setup and init in one go"]
-                #[doc = r" get the instance with get()"]
-                fn new(path: Option<String>) -> &'static Self;
-                fn get_singleton() -> &'static Self;
-                fn app_config(&self) -> &impl AppConfig;
-                fn app_state(&self) -> &impl AppState;
-                #[doc = r" call to initialize the app."]
+                #[doc = r" due to frb's current capabilities we cannot define function arguments as types."]
+                #[doc = r" for return types it works. Thus, Error is defined this way, while AppConfig is a generic parameter."]
+                type Error: AppStatePersistError;
                 #[doc = r" loads the app's state, which can be io-heavy"]
-                fn init<AC: AppConfig, AS: AppState>(app_config: &AC) -> AS {
-                    debug!("Initializing app with config: {:?}", app_config);
-                    AppState::load_or_new(app_config)
-                }
-                fn persist(&self) -> Result<(), std::io::Error>;
-                fn shutdown(&self) -> Result<(), std::io::Error>;
+                #[doc = r" get the instance with get_singleton(). Create the initial singleton with this function"]
+                fn initialise<AC: AppConfig + std::fmt::Debug>(
+                    app_config: AC,
+                ) -> Result<&'static Self, Self::Error>;
+                #[doc = r" frb doesn't support generics. Thus, we can call this concrete function."]
+                fn initialise_with_file_persister(app_config: AppConfigImpl) -> Result<(), Self::Error>;
+                #[doc = r" get the instance with get_singleton(). Create the initial singleton with Lifecycle::initialise()"]
+                #[doc = r" This cannot be called from Flutter, as frb cannot handle references. Thus, it is called internally (by CQRS::process(), Lifecycle::shutdown() and others)"]
+                fn get_singleton() -> &'static Self;
+                #[doc = r" persist the app state to the previously stored location"]
+                #[doc = r" as we cannot pass references to frb (see 'get_singleton') persist() and shutdown() have to get 'self' by calling get_singleton() on their own."]
+                fn persist() -> Result<(), ProcessingError>;
+                fn shutdown() -> Result<(), ProcessingError>;
             }
-            pub trait AppConfig: Default + std::fmt::Debug {
+            pub trait AppConfig: Default {
                 #[doc = r" call to overwrite default values."]
-                #[doc = r" Doesn't trigger initialization."]
-                fn new(path: Option<String>) -> Self;
-                fn get_app_state_file_path(&self) -> &std::path::PathBuf;
+                #[doc = r" Doesn't trigger long initialization operations."]
+                fn new(url: Option<String>) -> Self;
+                #[doc = r" app state storage location"]
+                fn borrow_app_state_url(&self) -> &str;
             }
-            pub trait AppState {
-                fn load_or_new<A: AppConfig>(app_config: &A) -> Self
-                where
-                    Self: Sized;
-                #[allow(clippy::ptr_arg)]
-                fn persist_to_path(&self, path: &PathBuf) -> Result<(), std::io::Error>;
+            #[doc = r" the app's state is not exposed external - it is guarded behind CQRS functions"]
+            pub(crate) trait AppState: Serialize + for<'a> Deserialize<'a> {
+                fn new<AC: AppConfig>(app_config: &AC) -> Self;
                 fn dirty_flag_value(&self) -> bool;
                 fn mark_dirty(&self);
             }
-            pub(crate) trait CqrsModel: std::marker::Sized + Default {
-                fn new() -> Self {
-                    Self::default()
-                }
+            pub trait AppStatePersistError:
+                std::error::Error + From<(std::io::Error, String)> + From<(bincode::Error, String)>
+            {
+                #[doc = r" convert to ProcessingError::NotPersisted"]
+                fn to_processing_error(&self) -> ProcessingError;
+            }
+            pub(crate) trait AppStatePersister {
+                #[doc = r" prepares for persisting a new AppState. Not needed if the AppState is loaded!"]
+                type Error: AppStatePersistError;
+                fn new<AC: AppConfig>(app_config: &AC) -> Result<Self, Self::Error>
+                where
+                    Self: Sized;
+                #[doc = r" Persists the application state to storage."]
+                #[doc = r" Ensures that the `AppState` is stored in a durable way, regardless of the underlying mechanism."]
+                fn persist_app_state<AS: AppState + std::fmt::Debug>(
+                    &self,
+                    state: &AS,
+                ) -> Result<(), Self::Error>;
+                #[doc = r" Loads the application state."]
+                #[doc = r" Returns a result with the `AppState` if successful or an `InfrastructureError` otherwise."]
+                fn load_app_state<AC: AppConfig, AS: AppState>(&self) -> Result<AS, Self::Error>;
+            }
+            pub(crate) trait CqrsModel:
+                std::marker::Sized + Default + serde::Serialize + for<'de> serde::Deserialize<'de>
+            {
             }
             pub(crate) trait CqrsModelLock<CqrsModel>:
-                Default + From<CqrsModel> + std::marker::Sized + Clone
+                std::marker::Sized + Clone + serde::Serialize + for<'de> serde::Deserialize<'de>
             {
-                fn new() -> Self {
-                    Self::default()
-                }
+                fn for_model(model: CqrsModel) -> Self;
             }
             pub trait Cqrs: std::fmt::Debug {
                 fn process(self) -> Result<Vec<Effect>, ProcessingError>;
@@ -374,51 +391,68 @@ mod tests {
         let expected = quote! {
                     use crate::good_source_file::*;
                     use crate::second_model_file::*;
-                    use log::debug;
-                    use std::path::PathBuf;
                     pub trait Lifecycle {
-                        #[doc = r" the app config is to be set only once, and read afterwards. If mutation is needed wrapp it into a lock for concurrent write access"]
-                        #[doc = r" to avoid an illegal state (app state not loaded) we do the setup and init in one go"]
-                        #[doc = r" get the instance with get()"]
-                        fn new(path: Option<String>) -> &'static Self;
-                        fn get_singleton() -> &'static Self;
-                        fn app_config(&self) -> &impl AppConfig;
-                        fn app_state(&self) -> &impl AppState;
-                        #[doc = r" call to initialize the app."]
+                        #[doc = r" due to frb's current capabilities we cannot define function arguments as types."]
+                        #[doc = r" for return types it works. Thus, Error is defined this way, while AppConfig is a generic parameter."]
+                        type Error: AppStatePersistError;
                         #[doc = r" loads the app's state, which can be io-heavy"]
-                        fn init<AC: AppConfig, AS: AppState>(app_config: &AC) -> AS {
-                            debug!("Initializing app with config: {:?}", app_config);
-                            AppState::load_or_new(app_config)
-                        }
-                        fn persist(&self) -> Result<(), std::io::Error>;
-                        fn shutdown(&self) -> Result<(), std::io::Error>;
+                        #[doc = r" get the instance with get_singleton(). Create the initial singleton with this function"]
+                        fn initialise<AC: AppConfig + std::fmt::Debug>(
+                            app_config: AC,
+                        ) -> Result<&'static Self, Self::Error>;
+                        #[doc = r" frb doesn't support generics. Thus, we can call this concrete function."]
+                        fn initialise_with_file_persister(app_config: AppConfigImpl) -> Result<(), Self::Error>;
+                        #[doc = r" get the instance with get_singleton(). Create the initial singleton with Lifecycle::initialise()"]
+                        #[doc = r" This cannot be called from Flutter, as frb cannot handle references. Thus, it is called internally (by CQRS::process(), Lifecycle::shutdown() and others)"]
+                        fn get_singleton() -> &'static Self;
+                        #[doc = r" persist the app state to the previously stored location"]
+                        #[doc = r" as we cannot pass references to frb (see 'get_singleton') persist() and shutdown() have to get 'self' by calling get_singleton() on their own."]
+                        fn persist() -> Result<(), ProcessingError>;
+                        fn shutdown() -> Result<(), ProcessingError>;
                     }
-                    pub trait AppConfig: Default + std::fmt::Debug {
+                    pub trait AppConfig: Default {
                         #[doc = r" call to overwrite default values."]
-                        #[doc = r" Doesn't trigger initialization."]
-                        fn new(path: Option<String>) -> Self;
-                        fn get_app_state_file_path(&self) -> &std::path::PathBuf;
+                        #[doc = r" Doesn't trigger long initialization operations."]
+                        fn new(url: Option<String>) -> Self;
+                        #[doc = r" app state storage location"]
+                        fn borrow_app_state_url(&self) -> &str;
                     }
-                    pub trait AppState {
-                        fn load_or_new<A: AppConfig>(app_config: &A) -> Self
-                        where
-                            Self: Sized;
-                        #[allow(clippy::ptr_arg)]
-                        fn persist_to_path(&self, path: &PathBuf) -> Result<(), std::io::Error>;
+                    #[doc = r" the app's state is not exposed external - it is guarded behind CQRS functions"]
+                    pub(crate) trait AppState: Serialize + for<'a> Deserialize<'a> {
+                        fn new<AC: AppConfig>(app_config: &AC) -> Self;
                         fn dirty_flag_value(&self) -> bool;
                         fn mark_dirty(&self);
                     }
-                    pub(crate) trait CqrsModel: std::marker::Sized + Default {
-                        fn new() -> Self {
-                            Self::default()
-                        }
+                    pub trait AppStatePersistError:
+                        std::error::Error + From<(std::io::Error, String)> + From<(bincode::Error, String)>
+                    {
+                        #[doc = r" convert to ProcessingError::NotPersisted"]
+                        fn to_processing_error(&self) -> ProcessingError;
+                    }
+                    pub(crate) trait AppStatePersister {
+                        #[doc = r" prepares for persisting a new AppState. Not needed if the AppState is loaded!"]
+                        type Error: AppStatePersistError;
+                        fn new<AC: AppConfig>(app_config: &AC) -> Result<Self, Self::Error>
+                        where
+                            Self: Sized;
+                        #[doc = r" Persists the application state to storage."]
+                        #[doc = r" Ensures that the `AppState` is stored in a durable way, regardless of the underlying mechanism."]
+                        fn persist_app_state<AS: AppState + std::fmt::Debug>(
+                            &self,
+                            state: &AS,
+                        ) -> Result<(), Self::Error>;
+                        #[doc = r" Loads the application state."]
+                        #[doc = r" Returns a result with the `AppState` if successful or an `InfrastructureError` otherwise."]
+                        fn load_app_state<AC: AppConfig, AS: AppState>(&self) -> Result<AS, Self::Error>;
+                    }
+                    pub(crate) trait CqrsModel:
+                        std::marker::Sized + Default + serde::Serialize + for<'de> serde::Deserialize<'de>
+                    {
                     }
                     pub(crate) trait CqrsModelLock<CqrsModel>:
-                        Default + From<CqrsModel> + std::marker::Sized + Clone
+                        std::marker::Sized + Clone + serde::Serialize + for<'de> serde::Deserialize<'de>
                     {
-                        fn new() -> Self {
-                            Self::default()
-                        }
+                        fn for_model(model: CqrsModel) -> Self;
                     }
                     pub trait Cqrs: std::fmt::Debug {
                         fn process(self) -> Result<Vec<Effect>, ProcessingError>;
@@ -563,7 +597,7 @@ mod tests {
     )]
     fn test_gengenerate_api_impl_no_model_struct() {
         let lifecycle_impl = quote! {
-            impl api_traits::Lifecycle for Lifecycle {}
+            impl Lifecycle for Lifecycle {}
         };
         let _ = generate_api_impl(lifecycle_impl, quote! {});
     }
