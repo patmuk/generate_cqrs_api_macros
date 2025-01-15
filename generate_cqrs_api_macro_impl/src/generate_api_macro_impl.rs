@@ -279,7 +279,7 @@ mod tests {
                 fn mark_dirty(&self);
             }
             pub trait AppStatePersistError:
-                std::error::Error + From<(std::io::Error, String)> + From<(bincode::Error, String)>
+                std::error::Error
             {
                 #[doc = r" convert to ProcessingError::NotPersisted"]
                 fn to_processing_error(&self) -> ProcessingError;
@@ -424,7 +424,7 @@ mod tests {
                         fn mark_dirty(&self);
                     }
                     pub trait AppStatePersistError:
-                        std::error::Error + From<(std::io::Error, String)> + From<(bincode::Error, String)>
+                        std::error::Error
                     {
                         #[doc = r" convert to ProcessingError::NotPersisted"]
                         fn to_processing_error(&self) -> ProcessingError;
