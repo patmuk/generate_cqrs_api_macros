@@ -246,6 +246,8 @@ mod tests {
     fn generate_all_from_good_file_test() {
         let expected = quote! {
             use crate::good_source_file::*;
+            use serde::{Deserialize, Serialize};
+
             pub trait Lifecycle {
                 #[doc = r" due to frb's current capabilities we cannot define function arguments as types."]
                 #[doc = r" for return types it works. Thus, Error is defined this way, while AppConfig is a generic parameter."]
@@ -391,6 +393,8 @@ mod tests {
         let expected = quote! {
                     use crate::good_source_file::*;
                     use crate::second_model_file::*;
+
+                    use serde::{Deserialize, Serialize};
                     pub trait Lifecycle {
                         #[doc = r" due to frb's current capabilities we cannot define function arguments as types."]
                         #[doc = r" for return types it works. Thus, Error is defined this way, while AppConfig is a generic parameter."]

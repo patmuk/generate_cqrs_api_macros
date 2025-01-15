@@ -3,6 +3,8 @@ use quote::quote;
 
 pub(crate) fn generate_api_traits() -> TokenStream {
     quote! {
+        use serde::{Deserialize, Serialize};
+
         pub trait Lifecycle {
             /// due to frb's current capabilities we cannot define function arguments as types.
             /// for return types it works. Thus, Error is defined this way, while AppConfig is a generic parameter.
