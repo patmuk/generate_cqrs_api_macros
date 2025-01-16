@@ -89,10 +89,10 @@ fn generate_code(
         let trait_impls = get_structs_by_traits(&ast, &["CqrsModel", "CqrsModelLock"]);
         let domain_model_ident = trait_impls
             .get("CqrsModel")
-            .expect("Couldn't extract the domain model's name. One Struct needs to derive CqrsModel.");
+            .expect("Couldn't extract the domain model's name. One Struct needs to impl CqrsModel.");
         debug!("domain model name: {:#?}", domain_model_ident);
         let domain_model_lock_ident = trait_impls.get("CqrsModelLock").expect(
-            "Couldn't extract the domaModelel lock's name. One Struct needs to derive CqrsModelLock.",
+            "Couldn't extract the domain model lock's name. At least One Struct needs to impl CqrsModelLock.",
         );
         debug!("domain model lock name: {:#?}", domain_model_lock_ident);
         ModelParsed{base_path : parsed_file.base_path, ast, domain_model_ident: domain_model_ident.to_owned(), domain_model_lock_ident: domain_model_lock_ident.to_owned() }

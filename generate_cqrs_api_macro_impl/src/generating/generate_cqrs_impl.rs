@@ -27,7 +27,7 @@ pub(crate) fn generate_cqrs_impl(
             let error_ident = &model.error_ident;
 
             let (cqrs_queries, cqrs_commands) = get_cqrs_functions(
-                domain_model_ident,
+                domain_model_lock_ident,
                 effect_ident,
                 &model.error_ident,
                 &model.ast,
@@ -283,12 +283,11 @@ fn get_cqrs_fns_sig_idents(cqrs_fns: &[ImplItemFn]) -> Vec<(Ident, Vec<Ident>)> 
 
 /// @returns tuple (CQRS Queries, CQRS Commands)
 fn get_cqrs_functions(
-    domain_model_struct_ident: &Ident,
+    domain_model_lock_ident: &Ident,
     effect: &Ident,
     processing_error: &Ident,
     ast: &File,
 ) -> (Vec<ImplItemFn>, Vec<ImplItemFn>) {
-    let domain_model_lock_struct_ident = format_ident!("{domain_model_struct_ident}Lock");
     let mut cqrs_fns = ast
         .items
         .iter()
@@ -296,7 +295,7 @@ fn get_cqrs_functions(
             // Filter for the lock struct
             match item {
                 syn::Item::Impl(item_impl)
-                    if get_ident(&item_impl.self_ty).ok()? == domain_model_lock_struct_ident =>
+                    if get_ident(&item_impl.self_ty).ok()? == *domain_model_lock_ident =>
                 {
                     Some(item_impl)
                 }
@@ -402,7 +401,7 @@ fn get_cqrs_functions(
     if cqrs_fns.0.is_empty() && cqrs_fns.1.is_empty() {
         panic!(
             r#"Did not find a single cqrs-function! Be sure to implement them like:
-            impl {domain_model_lock_struct_ident}{{
+            impl {domain_model_lock_ident}{{
                 fn my_cqrs_function(& self, OPTIONALLY_ANY_OTHER_PARAMETERS) -> Result<(bool, Vec<{effect}>), {processing_error}> {{...}}
             }}
 
@@ -668,7 +667,7 @@ mod tests {
     fn get_cqrs_fns_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
         let (cqrs_queries, cqrs_commands) = get_cqrs_functions(
-            &format_ident!("MyGoodDomainModel"),
+            &format_ident!("MyGoodDomainModelLock"),
             &format_ident!("MyGoodDomainModelEffect"),
             &format_ident!("MyGoodProcessingError"),
             &ast,
@@ -734,7 +733,7 @@ mod tests {
     fn get_cqrs_fns_fail_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
         let (cqrs_queries, cqrs_commands) = get_cqrs_functions(
-            &format_ident!("SomeModel"),
+            &format_ident!("SomeModelLock"),
             &format_ident!("SomeModelEffect"),
             &format_ident!("SomeModelError"),
             &ast,
@@ -753,7 +752,7 @@ mod tests {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
 
         let result = get_cqrs_functions(
-            &format_ident!("MyGoodDomainModel"),
+            &format_ident!("MyGoodDomainModelLock"),
             &format_ident!("MyGoodDomainModelEffect"),
             &format_ident!("MyGoodProcessingError"),
             &ast,
@@ -779,7 +778,7 @@ mod tests {
     fn generate_cqrs_enum_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
         let (cqrs_q, cqrs_c) = get_cqrs_functions(
-            &format_ident!("MyGoodDomainModel"),
+            &format_ident!("MyGoodDomainModelLock"),
             &format_ident!("MyGoodDomainModelEffect"),
             &format_ident!("MyGoodProcessingError"),
             &ast,
@@ -819,7 +818,7 @@ mod tests {
         let ast_2 =
             syn::parse_file(CODE_SECOND_MODEL).expect("test oracle model two should be parsable");
         let (cqrs_q, cqrs_c) = get_cqrs_functions(
-            &format_ident!("MyGoodDomainModel"),
+            &format_ident!("MyGoodDomainModelLock"),
             &format_ident!("MyGoodDomainModelEffect"),
             &format_ident!("MyGoodProcessingError"),
             &ast,
@@ -833,7 +832,7 @@ mod tests {
             &format_ident!("MyGoodDomainModel"),
         );
         let (cqrs_q_2, cqrs_c_2) = get_cqrs_functions(
-            &format_ident!("MySecondDomainModel"),
+            &format_ident!("MySecondDomainModelLock"),
             &format_ident!("MySecondDomainModelEffect"),
             &format_ident!("MySecondProcessingError"),
             &ast_2,
@@ -896,7 +895,7 @@ mod tests {
         .expect("Couldn't parse test oracle!");
         let effect_ident = effect_code.ident;
         let (cqrs_q, cqrs_c) = get_cqrs_functions(
-            &domain_model_struct_ident,
+            &domain_model_lock_ident,
             &effect_ident,
             &processing_error,
             &ast,
