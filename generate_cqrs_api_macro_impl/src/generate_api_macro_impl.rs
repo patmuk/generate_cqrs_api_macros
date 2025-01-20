@@ -253,11 +253,11 @@ mod tests {
                 type Error: AppStatePersistError;
                 #[doc = r" loads the app's state, which can be io-heavy"]
                 #[doc = r" get the instance with get_singleton(). Create the initial singleton with this function"]
-                fn initialise<AC: AppConfig + std::fmt::Debug>(
+                fn initialise_with_app_config<AC: AppConfig + std::fmt::Debug>(
                     app_config: AC,
                 ) -> Result<&'static Self, Self::Error>;
                 #[doc = r" frb doesn't support generics. Thus, we can call this concrete function."]
-                fn initialise_with_file_persister(app_config: AppConfigImpl) -> Result<(), Self::Error>;
+                fn initialise(app_state_url: Option<String>) -> Result<(), Self::Error>;
                 #[doc = r" get the instance with get_singleton(). Create the initial singleton with Lifecycle::initialise()"]
                 #[doc = r" This cannot be called from Flutter, as frb cannot handle references. Thus, it is called internally (by CQRS::process(), Lifecycle::shutdown() and others)"]
                 fn get_singleton() -> &'static Self;
@@ -400,11 +400,11 @@ mod tests {
                         type Error: AppStatePersistError;
                         #[doc = r" loads the app's state, which can be io-heavy"]
                         #[doc = r" get the instance with get_singleton(). Create the initial singleton with this function"]
-                        fn initialise<AC: AppConfig + std::fmt::Debug>(
+                        fn initialise_with_app_config<AC: AppConfig + std::fmt::Debug>(
                             app_config: AC,
                         ) -> Result<&'static Self, Self::Error>;
                         #[doc = r" frb doesn't support generics. Thus, we can call this concrete function."]
-                        fn initialise_with_file_persister(app_config: AppConfigImpl) -> Result<(), Self::Error>;
+                        fn initialise(app_state_url: Option<String>) -> Result<(), Self::Error>;
                         #[doc = r" get the instance with get_singleton(). Create the initial singleton with Lifecycle::initialise()"]
                         #[doc = r" This cannot be called from Flutter, as frb cannot handle references. Thus, it is called internally (by CQRS::process(), Lifecycle::shutdown() and others)"]
                         fn get_singleton() -> &'static Self;

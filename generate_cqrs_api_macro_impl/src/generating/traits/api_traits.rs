@@ -11,12 +11,12 @@ pub(crate) fn generate_api_traits() -> TokenStream {
             type Error: AppStatePersistError;
             /// loads the app's state, which can be io-heavy
             /// get the instance with get_singleton(). Create the initial singleton with this function
-            fn initialise<AC: AppConfig + std::fmt::Debug>(
+            fn initialise_with_app_config<AC: AppConfig + std::fmt::Debug>(
                 app_config: AC,
             ) -> Result<&'static Self, Self::Error>;
 
             /// frb doesn't support generics. Thus, we can call this concrete function.
-            fn initialise_with_file_persister(app_config: AppConfigImpl) -> Result<(), Self::Error>;
+            fn initialise(app_state_url: Option<String>) -> Result<(), Self::Error>;
 
             /// get the instance with get_singleton(). Create the initial singleton with Lifecycle::initialise()
             /// This cannot be called from Flutter, as frb cannot handle references. Thus, it is called internally (by CQRS::process(), Lifecycle::shutdown() and others)

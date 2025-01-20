@@ -19,16 +19,13 @@ pub struct LifecycleImpl {
 // #[generate_api("tests/good_source_file/mod.rs")]
 impl Lifecycle for LifecycleImpl {
     type Error = AppStatePersisterErrorMock;
-    fn initialise<AC: AppConfig + std::fmt::Debug>(
+    fn initialise_with_app_config<AC: AppConfig + std::fmt::Debug>(
         _app_config: AC,
     ) -> Result<&'static Self, Self::Error> {
         unimplemented!()
     }
-    fn initialise_with_file_persister(
-        app_config: AppConfigImpl,
-    ) -> Result<(), AppStatePersisterErrorMock> {
-        Self::initialise(app_config)?;
-        Ok(())
+    fn initialise(_app_state_url: Option<String>) -> Result<(), AppStatePersisterErrorMock> {
+        unimplemented!()
     }
 
     fn get_singleton() -> &'static Self {
