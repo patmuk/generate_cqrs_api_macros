@@ -17,4 +17,7 @@ impl AppState for AppStateImpl {
     fn mark_dirty(&self) {
         todo!()
     }
+    fn mark_persisted(&self) {
+        todo!()
+    }
 }

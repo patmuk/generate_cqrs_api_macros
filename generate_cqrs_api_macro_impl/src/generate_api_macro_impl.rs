@@ -278,6 +278,7 @@ mod tests {
                 fn new<AC: AppConfig>(app_config: &AC) -> Self;
                 fn dirty_flag_value(&self) -> bool;
                 fn mark_dirty(&self);
+                fn mark_persisted(&self);
             }
             pub trait AppStatePersistError:
                 std::error::Error
@@ -425,6 +426,7 @@ mod tests {
                         fn new<AC: AppConfig>(app_config: &AC) -> Self;
                         fn dirty_flag_value(&self) -> bool;
                         fn mark_dirty(&self);
+                        fn mark_persisted(&self);
                     }
                     pub trait AppStatePersistError:
                         std::error::Error
