@@ -7,10 +7,10 @@ use crate::generating::generate_use_statement::generate_use_statement;
 use crate::generating::traits::api_traits::generate_api_traits;
 use crate::generating::traits::cqrs_traits::generate_cqrs_traits;
 
+use crate::parsing::extract_type::get_type_as_capital_ident;
 use crate::parsing::get_struct_by_trait::get_structs_by_traits;
 // use crate::parsing::get_use_statements::get_use_statements;
 use crate::parsing::read_rust_files::{read_rust_file_content, tokens_2_file_locations};
-use crate::parsing::type_2_ident::get_ident;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse2, Ident, ItemImpl, Result, Variant};
@@ -76,8 +76,7 @@ pub fn generate_api_impl(item: TokenStream, file_paths: TokenStream) -> Result<T
 
 fn get_type_ident_from_impl(item: &TokenStream) -> Result<Ident> {
     let ast = parse2::<ItemImpl>(item.clone())?;
-    // let tipe = get_structs_by_traits(&ast, ["Lifecycle"]);
-    get_ident(&ast.self_ty)
+    get_type_as_capital_ident(&ast.self_ty)
 }
 
 fn generate_code(

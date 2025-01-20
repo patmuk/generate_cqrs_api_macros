@@ -2,6 +2,7 @@ use log::debug;
 use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
+use quote::ToTokens;
 use stringcase::pascal_case_with_sep;
 use stringcase::snake_case_with_sep;
 use syn::Fields;
@@ -11,7 +12,10 @@ use syn::ImplItemFn;
 use syn::Variant;
 
 use crate::generate_api_macro_impl::ModelNEffectsNErrors;
-use crate::parsing::type_2_ident::{get_ident, get_path, get_type_name};
+use crate::parsing::extract_type::get_path;
+use crate::parsing::extract_type::get_type_as_capital_ident;
+use crate::parsing::extract_type::get_type_as_snake_case_ident;
+use crate::parsing::extract_type::get_type_as_tokens;
 
 pub(crate) fn generate_cqrs_impl(
     lifecycle_impl_ident: &Ident,
@@ -88,7 +92,8 @@ fn generate_cqrs_functions(
     );
 
     let lhs_cqrs_call = {
-        let enum_variants = generate_cqrs_enum_variants(cqrs_queries_sig_idents);
+        let enum_variants =
+            generate_cqrs_enum_variants_with_argument_idents(cqrs_queries_sig_idents);
         enum_variants.into_iter().map(|variant| {
             quote! {
                 #enum_ident::#variant
@@ -118,7 +123,7 @@ fn generate_cqrs_functions(
                         if let Some(field_name) = &field.ident {
                             field_name.to_owned()
                         } else {
-                            get_type_name(&field.ty).expect("Couldn't get the types name!")
+                            get_type_as_snake_case_ident(&field.ty).expect("Couldn't get the types name!")
                         }
                     }
                     ).collect::<Vec<Ident>>()
@@ -181,23 +186,23 @@ fn generate_cqrs_functions(
 }
 
 fn generate_cqrs_query_enum(
-    cqrs_q_fns_sig_tipes: &[(Ident, Vec<Ident>)],
+    cqrs_q_fns_sig_tipes: &[(Ident, Vec<TokenStream>)],
     domain_model_struct_ident: &Ident,
 ) -> TokenStream {
     generate_cqrs_enum(cqrs_q_fns_sig_tipes, "Query", domain_model_struct_ident)
 }
 fn generate_cqrs_command_enum(
-    cqrs_q_fns_sig_tipes: &[(Ident, Vec<Ident>)],
+    cqrs_q_fns_sig_tipes: &[(Ident, Vec<TokenStream>)],
     domain_model_struct_ident: &Ident,
 ) -> TokenStream {
     generate_cqrs_enum(cqrs_q_fns_sig_tipes, "Command", domain_model_struct_ident)
 }
 fn generate_cqrs_enum(
-    cqrs_q_fns_sig_tipes: &[(Ident, Vec<Ident>)],
+    cqrs_q_fns_sig_tipes: &[(Ident, Vec<TokenStream>)],
     cqrs_kind: &str,
     domain_model_struct_ident: &Ident,
 ) -> TokenStream {
-    let enum_variants = generate_cqrs_enum_variants(cqrs_q_fns_sig_tipes);
+    let enum_variants = generate_cqrs_enum_variants_with_argument_types(cqrs_q_fns_sig_tipes);
     let cqrs_ident = format_ident!("{domain_model_struct_ident}{cqrs_kind}");
     let code = quote! {
         #[derive(Debug)]
@@ -210,7 +215,32 @@ fn generate_cqrs_enum(
     code
 }
 
-fn generate_cqrs_enum_variants(cqrs_fns_sig_tipes: &[(Ident, Vec<Ident>)]) -> Vec<TokenStream> {
+fn generate_cqrs_enum_variants_with_argument_idents(
+    cqrs_fns_sig_idents: &[(Ident, Vec<Ident>)],
+) -> Vec<TokenStream> {
+    let converted_for_fn_call: Vec<(Ident, Vec<TokenStream>)> = cqrs_fns_sig_idents
+        .iter()
+        .map(|(ident, arg_idents)| {
+            (
+                ident.clone(),
+                arg_idents
+                    .iter() // Use iter() since we have a reference
+                    .map(|arg_ident| arg_ident.to_token_stream())
+                    .collect::<Vec<TokenStream>>(),
+            )
+        })
+        .collect();
+    generate_cqrs_enum_variants(&converted_for_fn_call)
+}
+fn generate_cqrs_enum_variants_with_argument_types(
+    cqrs_fns_sig_tipes: &[(Ident, Vec<TokenStream>)],
+) -> Vec<TokenStream> {
+    generate_cqrs_enum_variants(cqrs_fns_sig_tipes)
+}
+
+fn generate_cqrs_enum_variants(
+    cqrs_fns_sig_tipes: &[(Ident, Vec<TokenStream>)],
+) -> Vec<TokenStream> {
     cqrs_fns_sig_tipes
         .iter()
         .map(|(ident, args)| {
@@ -240,7 +270,7 @@ fn generate_cqrs_enum_variants(cqrs_fns_sig_tipes: &[(Ident, Vec<Ident>)]) -> Ve
 /// extracts the signature of passed functions,
 /// returning the types of the arguments
 /// e.g.: foo(name: String, age: usize) => [foo [String, usize]]
-fn get_cqrs_fns_sig_tipes(cqrs_fns: &[ImplItemFn]) -> Vec<(Ident, Vec<Ident>)> {
+fn get_cqrs_fns_sig_tipes(cqrs_fns: &[ImplItemFn]) -> Vec<(Ident, Vec<TokenStream>)> {
     cqrs_fns
         .iter()
         .map(|function| {
@@ -249,17 +279,17 @@ fn get_cqrs_fns_sig_tipes(cqrs_fns: &[ImplItemFn]) -> Vec<(Ident, Vec<Ident>)> {
                 .inputs
                 .iter()
                 .filter_map(|arg| match arg {
-                    syn::FnArg::Typed(pat_type) => get_ident(&pat_type.ty).ok(),
+                    syn::FnArg::Typed(pat_type) => get_type_as_tokens(&pat_type.ty).ok(),
                     syn::FnArg::Receiver(_) => None,
                 })
-                .collect::<Vec<Ident>>();
+                .collect::<Vec<TokenStream>>();
             (function.sig.ident.to_owned(), args_tipes)
         })
-        .collect::<Vec<(Ident, Vec<Ident>)>>()
+        .collect::<Vec<(Ident, Vec<TokenStream>)>>()
 }
 /// extracts the signature of passed functions,
 /// returning the names of the arguments
-/// e.g.: foo(name: String, age: usize) => [foo [name, age]]
+/// e.g.: foo(full_name: Vec<String>, age: usize) => [(foo, [full_name, age])]
 fn get_cqrs_fns_sig_idents(cqrs_fns: &[ImplItemFn]) -> Vec<(Ident, Vec<Ident>)> {
     cqrs_fns
         .iter()
@@ -295,7 +325,8 @@ fn get_cqrs_functions(
             // Filter for the lock struct
             match item {
                 syn::Item::Impl(item_impl)
-                    if get_ident(&item_impl.self_ty).ok()? == *domain_model_lock_ident =>
+                    if get_type_as_capital_ident(&item_impl.self_ty).ok()?
+                        == *domain_model_lock_ident =>
                 {
                     Some(item_impl)
                 }
@@ -340,7 +371,7 @@ fn get_cqrs_functions(
             }
             // filter for Result<_, ProcessingError> (to get cqrs fns only)
             match right {
-                syn::GenericArgument::Type(tipe) => match get_ident(tipe) {
+                syn::GenericArgument::Type(tipe) => match get_type_as_capital_ident(tipe) {
                     Err(_) => None,
                     Ok(right_tipe) if right_tipe == *processing_error => {
                         Some((function, left.to_owned()))
@@ -372,13 +403,12 @@ fn get_cqrs_functions(
                             let vec_effect = type_tuple_iter.next();
                             if type_tuple_iter.next().is_some() {
                                 acc
-                            } else if state_changed
-                                .is_some_and(|tipe| get_ident(tipe).is_ok_and(|i| i == "bool"))
-                                && vec_effect.is_some_and(|tipe| {
-                                    get_path(tipe)
-                                        .is_ok_and(|path| match_vec_effect(&path.segments, effect))
-                                })
-                            {
+                            } else if state_changed.is_some_and(|tipe| {
+                                get_type_as_capital_ident(tipe).is_ok_and(|i| i == "bool")
+                            }) && vec_effect.is_some_and(|tipe| {
+                                get_path(tipe)
+                                    .is_ok_and(|path| match_vec_effect(&path.segments, effect))
+                            }) {
                                 acc.1.push(impl_fn.to_owned());
                                 acc
                             } else {
@@ -430,7 +460,7 @@ fn match_vec_effect(
         syn::PathArguments::AngleBracketed(angle_bracketed_generic_arguments) => {
             match angle_bracketed_generic_arguments.args.first() {
                 Some(syn::GenericArgument::Type(t)) => {
-                    if let Ok(inner_tipe_ident) = get_ident(t) {
+                    if let Ok(inner_tipe_ident) = get_type_as_capital_ident(t) {
                         inner_tipe_ident == *effect
                     } else {
                         false
@@ -558,6 +588,22 @@ mod tests {
                     // this clone is cheap, as it is on ARC (RustAutoOpaque>T> = Arc<RwMutex<T>>)
                     Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
                 }
+                pub(crate) fn arguments_have_option_and_collections(
+                    &self,
+                    option: Option<usize>,
+                    vec_arg: Vec<String>,
+                    hash_set_arg: HashSet<String>,
+                    hash_map_arg: HashMap<String>,
+                    priority: usize,
+                ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                    self.lock
+                    .blocking_write()
+                    .items
+                    .push(DomainItem { text: item });
+                    // this clone is cheap, as it is on ARC (RustAutoOpaque>T> = Arc<RwMutex<T>>)
+                    Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
+                }
+
                 pub(crate) fn command_clean_list(
                     &self,
                 ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
@@ -701,6 +747,20 @@ mod tests {
                 self.lock.blocking_write().items.push(DomainItem { text: item });
                 Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
             }
+            pub(crate) fn arguments_have_option_and_collections(
+                &self,
+                option: Option<usize>,
+                vec_arg: Vec<String>,
+                hash_set_arg: HashSet<String>,
+                hash_map_arg: HashMap<String>,
+                priority: usize,
+            ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
+                self.lock
+                    .blocking_write()
+                    .items
+                    .push(DomainItem { text: item });
+                Ok((true, vec![ItemListEffect::RenderItemList(self.clone())]))
+            }
             pub(crate) fn command_clean_list(
                 &self,
             ) -> Result<(bool, Vec<MyGoodDomainModelEffect>), MyGoodProcessingError> {
@@ -722,6 +782,7 @@ mod tests {
         };
         assert_eq!(expected.to_string(), result.to_string());
     }
+
     #[test]
     #[should_panic = "Did not find a single cqrs-function! Be sure to implement them like:
             impl SomeModelLock{
@@ -762,6 +823,7 @@ mod tests {
                 "all_items",
                 "query_get_item",
                 "add_item",
+                "arguments_have_option_and_collections",
                 "command_clean_list",
                 "remove_item"
             ],
@@ -804,11 +866,11 @@ mod tests {
             #[derive(Debug)]
             pub enum MyGoodDomainModelCommand  {
                 AddItem(String, usize),
+                ArgumentsHaveOptionAndCollections (Option<usize>, Vec<String>, HashSet<String>, HashMap<String>, usize),
                 CleanList,
-                RemoveItem(usize)
+                RemoveItem (usize)
             }
         };
-
         assert_eq!(expected.to_string(), result.to_string());
     }
 
@@ -860,6 +922,7 @@ mod tests {
             #[derive(Debug)]
             pub enum MyGoodDomainModelCommand  {
                 AddItem(String, usize),
+                ArgumentsHaveOptionAndCollections (Option<usize>, Vec<String>, HashSet<String>, HashMap<String>, usize),
                 CleanList,
                 RemoveItem(usize)
             }
@@ -878,6 +941,135 @@ mod tests {
         assert_eq!(expected.to_string(), result.to_string());
     }
 
+    #[test]
+    fn test_get_cqrs_fns_sig_idents() {
+        // when I have this input code
+        let input_code = quote! {
+            impl MyStruct {
+                pub fn hash_set_option_parameters (hashset_option_argument: HashSet<Option<String>>){
+                    unimplemented!()
+                }
+                pub fn hash_map_parameters (hashmap_argument: HashMap<String, usize>){
+                    unimplemented!()
+                }
+                pub fn normal_and_hash_set_parameters (string_argument: String, hashset_argument: HashSet<String>){
+                    unimplemented!()
+                }
+                pub fn hash_set_parameters (hashset_argument: HashSet<String>){
+                    unimplemented!()
+                }
+                pub fn vec_parameters (vec_argument: Vec<String>){
+                    unimplemented!()
+                }
+                pub fn normal_parameters (string_argument: String){
+                    unimplemented!()
+                }
+            }
+        };
+        // and I parse it into `Vec<ItemImplFn>`
+        // let parsed = syn::parse2::<Vec<syn::ImplItemFn>>(input_code)
+        // .expect("test oracle should be parsable");
+        let parsed = syn::parse2::<syn::File>(input_code).expect("test oracle should be parsable");
+        // Extract the impl block and its functions
+        let impl_block = if let syn::Item::Impl(impl_item) = &parsed.items[0] {
+            impl_item
+        } else {
+            panic!("Expected an impl block");
+        };
+        // Get all functions from the impl block
+        let item_impl_fns: Vec<syn::ImplItemFn> = impl_block
+            .items
+            .iter()
+            .filter_map(|item| {
+                if let syn::ImplItem::Fn(method) = item {
+                    Some(method.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // and I extract the function signatures
+        let result_sig = get_cqrs_fns_sig_idents(&item_impl_fns);
+        // then the result should be the input function signatures
+        let expected_result: Vec<(String, Vec<String>)> = vec![
+            (
+                "hash_set_option_parameters".to_string(),
+                vec!["hashset_option_argument".to_string()],
+            ),
+            (
+                "hash_map_parameters".to_string(),
+                vec!["hashmap_argument".to_string()],
+            ),
+            (
+                "normal_and_hash_set_parameters".to_string(),
+                vec![
+                    "string_argument".to_string(),
+                    "hashset_argument".to_string(),
+                ],
+            ),
+            (
+                "hash_set_parameters".to_string(),
+                vec!["hashset_argument".to_string()],
+            ),
+            (
+                "vec_parameters".to_string(),
+                vec!["vec_argument".to_string()],
+            ),
+            (
+                "normal_parameters".to_string(),
+                vec!["string_argument".to_string()],
+            ),
+        ];
+
+        let result_as_strings: Vec<(String, Vec<String>)> = result_sig
+            .iter()
+            .map(|(fn_ident, args)| {
+                (
+                    fn_ident.to_string(),
+                    args.iter().map(|arg| arg.to_string()).collect(),
+                )
+            })
+            .collect();
+
+        assert_eq!(result_as_strings, expected_result);
+        // and I extract the types
+        let result_types = get_cqrs_fns_sig_tipes(&item_impl_fns);
+        // then the collection types should be extracted as well
+        let expected_result_types: Vec<(String, Vec<String>)> = vec![
+            (
+                "hash_set_option_parameters".to_string(),
+                vec!["HashSet < Option < String >>".to_string()],
+            ),
+            (
+                "hash_map_parameters".to_string(),
+                vec!["HashMap < String , usize >".to_string()],
+            ),
+            (
+                "normal_and_hash_set_parameters".to_string(),
+                vec!["String".to_string(), "HashSet < String >".to_string()],
+            ),
+            (
+                "hash_set_parameters".to_string(),
+                vec!["HashSet < String >".to_string()],
+            ),
+            (
+                "vec_parameters".to_string(),
+                vec!["Vec < String >".to_string()],
+            ),
+            ("normal_parameters".to_string(), vec!["String".to_string()]),
+        ];
+
+        let result_types_as_strings: Vec<(String, Vec<String>)> = result_types
+            .iter()
+            .map(|(fn_ident, args)| {
+                (
+                    fn_ident.to_string(),
+                    args.iter().map(|arg| arg.to_string()).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(result_types_as_strings, expected_result_types);
+    }
     #[test]
     fn generate_cqrs_fns_test() {
         let ast = syn::parse_file(CODE).expect("test oracle should be parsable");
@@ -959,6 +1151,19 @@ mod tests {
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
                         MyGoodDomainModelCommand::AddItem(item, priority) => my_good_domain_model_lock.add_item(item, priority),
+                        MyGoodDomainModelCommand::ArgumentsHaveOptionAndCollections(
+                            option,
+                            vec_arg,
+                            hash_set_arg,
+                            hash_map_arg,
+                            priority
+                        ) => my_good_domain_model_lock.arguments_have_option_and_collections(
+                            option,
+                            vec_arg,
+                            hash_set_arg,
+                            hash_map_arg,
+                            priority
+                        ),
                         MyGoodDomainModelCommand::CleanList => my_good_domain_model_lock.command_clean_list(),
                         MyGoodDomainModelCommand::RemoveItem(item_pos) => my_good_domain_model_lock.remove_item(item_pos) ,
                     }
@@ -1053,6 +1258,7 @@ mod tests {
             #[derive(Debug)]
             pub enum MyGoodDomainModelCommand {
                 AddItem(String, usize),
+                ArgumentsHaveOptionAndCollections (Option<usize>, Vec<String>, HashSet<String>, HashMap<String>, usize),
                 CleanList,
                 RemoveItem(usize)
             }
@@ -1085,6 +1291,19 @@ mod tests {
                     let my_good_domain_model_lock = &app_state.my_good_domain_model_lock;
                     let (state_changed, result) = match self {
                         MyGoodDomainModelCommand::AddItem(item, priority) => my_good_domain_model_lock.add_item(item, priority),
+                        MyGoodDomainModelCommand::ArgumentsHaveOptionAndCollections(
+                            option,
+                            vec_arg,
+                            hash_set_arg,
+                            hash_map_arg,
+                            priority
+                        ) => my_good_domain_model_lock.arguments_have_option_and_collections(
+                            option,
+                            vec_arg,
+                            hash_set_arg,
+                            hash_map_arg,
+                            priority
+                        ),
                         MyGoodDomainModelCommand::CleanList => my_good_domain_model_lock.command_clean_list(),
                         MyGoodDomainModelCommand::RemoveItem(item_pos) => my_good_domain_model_lock.remove_item(item_pos) ,
                     }

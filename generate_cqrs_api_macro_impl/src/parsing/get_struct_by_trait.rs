@@ -1,6 +1,7 @@
-use super::type_2_ident::get_ident;
 use std::collections::HashMap;
 use syn::{File, Ident};
+
+use super::extract_type::get_type_as_capital_ident;
 
 pub(crate) fn get_structs_by_traits(ast: &File, trait_idents: &[&str]) -> HashMap<String, Ident> {
     let found_structs = ast
@@ -21,7 +22,8 @@ pub(crate) fn get_structs_by_traits(ast: &File, trait_idents: &[&str]) -> HashMa
                     if trait_idents.contains(&trait_ident.to_string().as_str()) {
                         acc.insert(
                             trait_ident.to_string(),
-                            get_ident(&item_impl.self_ty).expect("Couldn't get type"),
+                            get_type_as_capital_ident(&item_impl.self_ty)
+                                .expect("Couldn't get type"),
                         );
                     }
                 }
@@ -53,7 +55,6 @@ pub(crate) fn get_structs_by_traits(ast: &File, trait_idents: &[&str]) -> HashMa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quote::format_ident;
     use syn::parse_file;
 
     const AST_STR: &str = r#"
@@ -81,14 +82,17 @@ trait ModelTrait {
         let ast = parse_file(AST_STR).unwrap();
 
         let structs = get_structs_by_traits(&ast, &["ModelTrait", "DifferentTrait"]);
-
+        let structs_string: HashMap<String, String> = structs
+            .into_iter()
+            .map(|(key, value)| (key, value.to_string()))
+            .collect();
         assert_eq!(
-            structs,
+            structs_string,
             HashMap::from([
-                ("ModelTrait".to_string(), format_ident!("Model")),
+                ("ModelTrait".to_string(), "Model".to_string()),
                 (
                     "DifferentTrait".to_string(),
-                    format_ident!("SomethingDifferent")
+                    "SomethingDifferent".to_string()
                 )
             ])
         );

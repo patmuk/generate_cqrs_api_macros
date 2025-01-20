@@ -4,7 +4,7 @@ pub(crate) struct AppStateImpl {
     pub my_second_domain_model_lock: MySecondDomainModelLock,
 }
 
-pub(crate) type StateChanged = bool;
+pub(crate) type _StateChanged = bool;
 
 impl AppState for AppStateImpl {
     fn new<A: AppConfig>(app_config: &A) -> Self {
