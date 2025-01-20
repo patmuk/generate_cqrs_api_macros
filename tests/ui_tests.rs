@@ -24,7 +24,7 @@ impl Lifecycle for LifecycleImpl {
     ) -> Result<&'static Self, Self::Error> {
         unimplemented!()
     }
-    fn initialise(_app_state_url: Option<String>) -> Result<(), AppStatePersisterErrorMock> {
+    fn initialise(_app_state_url: Option<String>) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
