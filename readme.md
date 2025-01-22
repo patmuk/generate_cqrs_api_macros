@@ -248,11 +248,15 @@ Similar to the Errors, the macro will combine the effects defined for each model
 There is two ways to return a model's values: 1. returning the value directly or 2. returning the whole model.
 
 If the value is not heavy it can be returned directly. For this, implement an `enum Effect` variant, that can hold your value, like `RenderText(String)`.
-This value has to be `clone()`ed.
+This value has to be `clone()`ed. Note that for FRB all structs of these values have to be non-opaque. Otherwise the whole (generated) Effect enum will be Opaque and no data can be returned.
 
 Alternatively you can return the whole model - or more preceise the lock on the value: Have an `enum Effect` variant, which holds the model's lock, like `RenderModel(ModelLock)`.
 Again, you need to `clone()` the lock - but this is very lightweight (depending on the nature of your consuming app. If it is a Rust app or a flutter app, connected by FRB, it is only copying a pointer).
+
 Now the shell app can aquire the lock on the model and read the needed values.
+
+Note that this, only sending a reference to the model (the lock) instead of the whole model, is possilbe when using FRB by making it opaque: The lock is a `RustAutoOpaque<MyModel>`. Thus, the model cannot be a field of an enum variant directly.
+
 However, do not write on the model, as this would not be detected by the state management!
 Therefore, keep the model's fields private and expose them only via getters (in addition to the CQRS Queries).
 
