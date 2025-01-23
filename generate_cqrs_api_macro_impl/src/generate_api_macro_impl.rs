@@ -114,7 +114,7 @@ fn generate_code(
         .collect::<Vec<TokenStream>>();
 
     let generated_code = quote! {
-        #(#use_statements)*
+        #(pub #use_statements)*
         #generated_api_traits
         #generated_cqrs_traits
         #generated_error_enum
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn generate_all_from_good_file_test() {
         let expected = quote! {
-            use crate::good_source_file::*;
+            pub use crate::good_source_file::*;
             use serde::{Deserialize, Serialize};
 
             pub trait Lifecycle {
@@ -391,8 +391,8 @@ mod tests {
     #[test]
     fn generate_all_from_two_files_test() {
         let expected = quote! {
-                    use crate::good_source_file::*;
-                    use crate::second_model_file::*;
+                    pub use crate::good_source_file::*;
+                    pub use crate::second_model_file::*;
 
                     use serde::{Deserialize, Serialize};
                     pub trait Lifecycle {
